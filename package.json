@@ -1,6 +1,7 @@
 {
   "name": "austin-vscode",
   "displayName": "Austin VS Code",
+  "publisher": "p403n1x87",
   "description": "",
   "version": "0.0.1",
   "engines": {
@@ -10,14 +11,46 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:austin-vscode.profile"
+    "onCommand:austin-vscode.profile",
+    "onCommand:austin-vscode.load"
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Austin",
+      "properties": {
+        "austin.path": {
+          "description": "Specifies the absolute path to the Austin binary. Leave blank to discover from PATH.",
+          "type": "string"
+        }
+      }
+    },
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "flame-graph",
+          "title": "Flame Graph",
+          "icon": "resources/package-explorer.svg"
+        }
+      ]
+    },
+    "views": {
+      "flame-graph": [
+        {
+          "type": "webview",
+          "id": "austin-vscode.flameGraph",
+          "name": "Flame Graph"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "austin-vscode.profile",
         "title": "Profile with Austin"
+      },
+      {
+        "command": "austin-vscode.load",
+        "title": "Load Austin Samples"
       }
     ]
   },
@@ -44,5 +77,9 @@
   },
   "extensionDependencies": [
     "ms-python.python"
-  ]
+  ],
+  "dependencies": {
+    "d3": "^6.7.0",
+    "d3-flame-graph": "^4.0.6"
+  }
 }
