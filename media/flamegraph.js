@@ -1,126 +1,74 @@
-// ---- Manage the Flame Graph view -------------------------------------------
+//@ts-check
 
-// String.prototype.toHHMMSS = function () {
-//     var sec_num = parseInt(this, 10); // don't forget the second param
-//     var hours = Math.floor(sec_num / 3600);
-//     var minutes = Math.floor((sec_num - (hours * 3600)) / 60);
-//     var seconds = sec_num - (hours * 3600) - (minutes * 60);
+const vscode = acquireVsCodeApi();
 
-//     if (hours < 10) { hours = "0" + hours; }
-//     if (minutes < 10) { minutes = "0" + minutes; }
-//     if (seconds < 10) { seconds = "0" + seconds; }
-//     return hours + ':' + minutes + ':' + seconds;
-// }
 
-// function esc(text) {
-//     return text.replace("<", "&lt;").replace(">", "&gt;")
-// }
-
-// function time_label(d, parent) {
-//     return (
-//         esc(d.data.name) + " 🕘 " + (d.data.value / 1000000).toString().toHHMMSS() +
-//         " (" + (d.data.value / parent.data.value * 100).toFixed(2) + "%)"
-//     )
-// }
-
-// function memory_label(d, parent) {
-//     value = d.data.value < 1024
-//         ? (d.data.value.toString() + " KB")
-//         : (d.data.value >> 10).toString() + " MB";
-
-//     return (
-//         esc(d.data.name) + " 📏 " + value +
-//         " (" + (d.data.value / parent.data.value * 100).toFixed(2) + "%)"
-//     )
-// }
-
-// var label_map = { "t": time_label, "m": memory_label };
-
-// ----------------------------------------------------------------------------
-
-var flameGraph = flamegraph()
-    // .height(0)
-    .width(document.getElementById('chart').offsetWidth)
-// .cellHeight(18)
-// .transitionDuration(250)
-// .minFrameSize(0)
-// .transitionEase(d3.easeCubic)
-// .sort(true)
-// .title("")
-// .label(function (d) {
-//     var c = ""
-//     for (var e in d) { c += " " + e; }
-//     var parent = d;
-//     try {
-//         while (parent.parent.parent) {
-//             parent = parent.parent;
-//         }
-//     }
-//     catch (err) {
-//         // parent.parent is undefied
-//     }
-//     return label(d, parent)
-// }
-// );
-
-flameGraph.setHeight = function (height) {
-    flameGraph.height(height * 18);
-    d3.select("#chart svg").style("height", height * 18);
+function hslToHex(h, s, l) {
+    l /= 100;
+    const a = s * Math.min(l, 1 - l) / 100;
+    const f = n => {
+        const k = (n + h / 30) % 12;
+        const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+        return Math.round(255 * color).toString(16).padStart(2, '0');   // convert to Hex and prefix "0" if needed
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-flameGraph.setWidth = function (width) {
-    flameGraph.width(width);
-    d3.select("#chart svg").style("width", width);
-    flameGraph.resetZoom();
-}
 
-// var details = document.getElementById("details");
-// flameGraph.setDetailsElement(details);
-
-data = {
-    "name": "foo",
-    "value": 10,
-    "children": [
-        {
-            "name": "bar",
-            "value": 5,
-            "children": []
-        }
-    ]
+var stringToColour = function (str) {
+    var hash = 0;
+    for (var i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    let h = hash % 360;
+    return hslToHex(h >= 0 ? h : -h, 50, 75);
 };
 
-d3.select("#chart")
-    .datum(data)
-    .call(flameGraph);
-
-// document.getElementById("form").addEventListener("submit", function (event) {
-//     event.preventDefault();
-//     search();
-// });
-
-// function search() {
-//     var term = document.getElementById("term").value;
-//     if (term) {
-//         flameGraph.search(term);
-//     }
-// }
-
-// function onSearch() {
-//     var term = document.getElementById("term").value;
-//     if (!term) {
-//         clear();
-//     }
-// }
-
-// function clear() {
-//     // document.getElementById('term').value = '';
-//     flameGraph.clear();
-// }
-
-// function resetZoom() {
-//     flameGraph.resetZoom();
-// }
-
-function onResize() {
-    flameGraph.setWidth(document.getElementById('chart').offsetWidth);
+function isEmpty(obj) {
+    return obj && Object.keys(obj).length === 0 && obj.constructor === Object;
 }
+
+
+function flameGraph(data) {
+    if (isEmpty(data)) {
+        return;
+    }
+
+    var flameGraph = flamegraph()
+        .width(document.getElementById('chart').offsetWidth)
+        .transitionDuration(250)
+        .minFrameSize(0)
+        .transitionEase(d3.easeCubic)
+        .inverted(true);
+
+    flameGraph.setWidth = function (width) {
+        flameGraph.width(width);
+        d3.select("#chart svg").style("width", width);
+        flameGraph.resetZoom();
+    };
+
+    flameGraph.setColorMapper(function (d, originalColor) {
+        return d.highlight ? "#E600E6" : stringToColour(d.data.name);
+    });
+
+    flameGraph.onClick(function (d) {
+        console.info("You clicked on frame " + JSON.stringify(d.data.data));
+        vscode.postMessage(d.data.data);
+    });
+
+    d3.select("#chart")
+        .datum(data)
+        .call(flameGraph);
+
+    window.addEventListener('resize', () => { flameGraph.setWidth(document.getElementById('chart').offsetWidth); });
+}
+
+
+flameGraph(vscode.getState());
+
+
+window.addEventListener('message', event => {
+    flameGraph(event.data);
+    vscode.setState(event.data);
+    console.log("message event " + JSON.stringify(event.data));
+});

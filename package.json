@@ -12,7 +12,8 @@
   ],
   "activationEvents": [
     "onCommand:austin-vscode.profile",
-    "onCommand:austin-vscode.load"
+    "onCommand:austin-vscode.load",
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -20,8 +21,13 @@
       "title": "Austin",
       "properties": {
         "austin.path": {
-          "description": "Specifies the absolute path to the Austin binary. Leave blank to discover from PATH.",
+          "description": "Specifies the absolute path to the Austin binary. Leave blank to discover from PATH",
           "type": "string"
+        },
+        "austin.interval": {
+          "description": "The sampling interval, in microseconds",
+          "type": "number",
+          "default": 100
         }
       }
     },
@@ -30,7 +36,7 @@
         {
           "id": "flame-graph",
           "title": "Flame Graph",
-          "icon": "resources/package-explorer.svg"
+          "icon": "media/austin.svg"
         }
       ]
     },
@@ -39,7 +45,9 @@
         {
           "type": "webview",
           "id": "austin-vscode.flameGraph",
-          "name": "Flame Graph"
+          "name": "Flame Graph",
+          "icon": "media/austin.svg",
+          "visibility": "hidden"
         }
       ]
     },
@@ -50,7 +58,7 @@
       },
       {
         "command": "austin-vscode.load",
-        "title": "Load Austin Samples"
+        "title": "Load Austin Samples ..."
       }
     ]
   },

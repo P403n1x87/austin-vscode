@@ -1,6 +1,5 @@
 import { createReadStream } from 'fs';
 import { createInterface } from 'readline';
-import { LinkedEditingRanges } from 'vscode';
 import './stringExtension';
 
 
