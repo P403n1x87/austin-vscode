@@ -1,13 +1,13 @@
 import * as vscode from 'vscode';
 import { dirname, join } from 'path';
 import { setLineHeat, clearDecorations } from './view';
-import { aggregateByLine, makeHierarchy } from './model';
-
+import { absolutePath, aggregateByLine, makeHierarchy } from './model';
 
 
 function delay(ms: number) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
+
 
 export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
@@ -38,6 +38,10 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         this._setWelcomeHtml(webviewView.webview);
 
         webviewView.webview.onDidReceiveMessage(data => {
+            if (data === "open") {
+                this.openSampleFile();
+                return;
+            }
             const source = data.source;
             const module = data.file;
             const minLine = data.lines ? Math.min(...data.lines) : 0;
@@ -46,7 +50,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 return;
             }
             aggregateByLine(source, (stats, overallTotal) => {
-                vscode.workspace.openTextDocument(module).then((doc) => {
+                vscode.workspace.openTextDocument(absolutePath(module)).then((doc) => {
                     vscode.window.showTextDocument(doc, vscode.ViewColumn.One, false).then((editor) => {
                         clearDecorations();
                         editor?.revealRange(new vscode.Range(
@@ -74,19 +78,19 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
             if (pythonExtension !== undefined) {
                 pythonExtension.exports.settings.getExecutionDetails();
                 const interpreter: string = pythonExtension.exports.settings.getExecutionDetails().execCommand[0];
-                // vscode.window.showInformationMessage("Selected Python interpreter: " + interpreter);
 
                 const currentUri = vscode.window.activeTextEditor?.document.uri;
                 if (currentUri?.scheme === "file") {
                     const outputFile = join(dirname(currentUri.fsPath), ".austin-vscode");
 
-                    // vscode.window.showInformationMessage("Profiling " + currentUri.fsPath);
                     const terminal = vscode.window.createTerminal("Austin");
-                    terminal.show();
                     const config = vscode.workspace.getConfiguration('austin');
                     const austinPath = config.get("path") || "austin";
+                    const sleepless = config.get("mode") == "CPU time" ? "-s" : "";
                     const austinInterval: number = parseInt(config.get("interval") || "100");
-                    terminal.sendText(`${austinPath} -i ${austinInterval} -o ${outputFile} ${interpreter} ${currentUri.fsPath}` + "; exit $LastExitCode");
+
+                    terminal.show();
+                    terminal.sendText(`${austinPath} -i ${austinInterval} -o ${outputFile} ${sleepless} ${interpreter} ${currentUri.fsPath}` + "; exit $LastExitCode");
 
                     while (terminal.exitStatus === undefined) {
                         await delay(1);
@@ -97,7 +101,6 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                         vscode.window.showErrorMessage("Austin terminated with code " + exitCode?.toString());
                     }
                     else {
-                        vscode.window.showInformationMessage("Austin has finished profiling.");
                         clearDecorations();
                         aggregateByLine(outputFile, (stats, overallTotal) => {
                             const lines = stats.get(currentUri.fsPath);
@@ -151,7 +154,9 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 }
             });
         }
-
+        else {
+            vscode.window.showInformationMessage("Open the flame graph panel first.");
+        }
     }
 
     private _setFlameGraphHtml(webview: vscode.Webview) {
@@ -170,7 +175,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 <link rel="stylesheet" type="text/css" href="${d3FlameGraphCssUri}">
                 <link rel="stylesheet" type="text/css" href="${austinCssUri}">
             </head>
-            <body>
+            <body class="logo">
                 <div id="chart"></div>
 
                 <script type="text/javascript" src="${d3ScriptUri}"></script>
@@ -182,6 +187,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
     private _setWelcomeHtml(webview: vscode.Webview) {
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
+        const austinLogoUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.svg'));
 
         webview.html = `<!DOCTYPE html>
 			<html lang="en">
@@ -189,6 +195,18 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 <link rel="stylesheet" type="text/css" href="${austinCssUri}">
             </head>
             <body>
+                <div class="box">
+                    <div><img src="${austinLogoUri}" alt="Austin logo" width="192px" /></div>
+                    <div class="center"><button onclick="onOpen()">OPEN</button></div>
+                </div>
+
+                <script>
+                const vscode = acquireVsCodeApi();
+                
+                function onOpen() {
+                    vscode.postMessage("open");;
+                }
+                </script>
             </body>
 			</html>`;
     }

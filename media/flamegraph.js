@@ -30,7 +30,7 @@ function isEmpty(obj) {
 
 
 function flameGraph(data) {
-    if (isEmpty(data)) {
+    if (!data || isEmpty(data)) {
         return;
     }
 
@@ -52,7 +52,6 @@ function flameGraph(data) {
     });
 
     flameGraph.onClick(function (d) {
-        console.info("You clicked on frame " + JSON.stringify(d.data.data));
         vscode.postMessage(d.data.data);
     });
 
@@ -70,5 +69,4 @@ flameGraph(vscode.getState());
 window.addEventListener('message', event => {
     flameGraph(event.data);
     vscode.setState(event.data);
-    console.log("message event " + JSON.stringify(event.data));
 });

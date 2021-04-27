@@ -28,6 +28,19 @@
           "description": "The sampling interval, in microseconds",
           "type": "number",
           "default": 100
+        },
+        "austin.mode": {
+          "description": "Profiling mode",
+          "type": "string",
+          "enum": [
+            "Wall time",
+            "CPU time"
+          ],
+          "enumDescriptions": [
+            "Estimate wall-clock time",
+            "Estimate CPU time"
+          ],
+          "default": "Wall time"
         }
       }
     },

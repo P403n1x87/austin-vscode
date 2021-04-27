@@ -1,6 +1,23 @@
-import { createReadStream } from 'fs';
+import * as vscode from 'vscode';
+import { createReadStream, existsSync } from 'fs';
 import { createInterface } from 'readline';
 import './stringExtension';
+import { isAbsolute } from 'path';
+
+
+export function absolutePath(path: string) {
+    if (!isAbsolute(path)) {
+        if (vscode.workspace.workspaceFolders) {
+            for (let folder of vscode.workspace.workspaceFolders) {
+                let absolutePath = vscode.Uri.joinPath(folder.uri, path).fsPath
+                if (existsSync(absolutePath)) {
+                    return absolutePath;
+                }
+            }
+        }
+    }
+    return path;
+}
 
 
 interface FrameObject {
@@ -13,7 +30,8 @@ interface FrameObject {
 function parseFrame(frame: string): FrameObject {
     let module: string, scope: string, line: string;
     [module, scope, line] = frame.rsplit(":", 2);
-    return { "scope": scope, "lineNumber": Number(line), "module": module };
+
+    return { "scope": scope, "lineNumber": Number(line), "module": absolutePath(module) };
 }
 
 

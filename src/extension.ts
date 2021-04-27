@@ -30,6 +30,7 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+	// ---- Interval selector ----
 	const config = vscode.workspace.getConfiguration('austin');
 	const austinInterval: number = parseInt(config.get("interval") || "100");
 	const austinIntervalStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -37,8 +38,6 @@ export function activate(context: vscode.ExtensionContext) {
 	austinIntervalStatusBarItem.command = "austin-vscode.interval";
 	austinIntervalStatusBarItem.text = formatInterval(austinInterval);
 	austinIntervalStatusBarItem.tooltip = "Austin sampling interval";
-
-	austinIntervalStatusBarItem.show();
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand(austinIntervalStatusBarItem.command, () => {
@@ -59,6 +58,45 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+
+	// ---- Mode selector ----
+	const austinMode: string = config.get("mode");
+	const austinModeStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 101);
+
+	austinModeStatusBarItem.command = "austin-vscode.mode";
+	austinModeStatusBarItem.text = `$(clock) ${austinMode}`;
+	austinModeStatusBarItem.tooltip = "Austin sampling mode";
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand(austinModeStatusBarItem.command, () => {
+			// Show mode picker
+			vscode.window.showQuickPick(
+				["Wall time", "CPU time"], { "canPickMany": false }
+			).then((value) => {
+				if (value) {
+					config.update("mode", value);
+					austinModeStatusBarItem.text = `$(clock) ${value}`;
+				}
+			});
+		})
+	);
+
+	if (vscode.window.activeTextEditor?.document.languageId == "python") {
+		austinModeStatusBarItem.show();
+		austinIntervalStatusBarItem.show();
+	}
+
+
+	vscode.window.onDidChangeActiveTextEditor((event) => {
+		if (event?.document.languageId == "python") {
+			austinModeStatusBarItem.show();
+			austinIntervalStatusBarItem.show();
+		}
+		else {
+			austinModeStatusBarItem.hide();
+			austinIntervalStatusBarItem.hide();
+		}
+	});
 
 }
 
