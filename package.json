@@ -2,14 +2,26 @@
   "name": "austin-vscode",
   "displayName": "Austin VS Code",
   "publisher": "p403n1x87",
-  "description": "",
-  "version": "0.0.1",
+  "description": "Austin extension for VS Code",
+  "version": "0.1.0",
   "engines": {
     "vscode": "^1.52.0"
+  },
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/p403n1x87/austin-vscode"
   },
   "categories": [
     "Other"
   ],
+  "keywords": [
+    "python",
+    "profiling",
+    "performance",
+    "devtools"
+  ],
+  "license": "GPL3",
+  "icon": "art/icon.png",
   "activationEvents": [
     "onCommand:austin-vscode.profile",
     "onCommand:austin-vscode.load",
