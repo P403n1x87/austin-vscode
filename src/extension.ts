@@ -61,7 +61,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// ---- Mode selector ----
 	const austinMode: string = config.get("mode");
-	const austinModeStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 101);
+	const austinModeStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 
 	austinModeStatusBarItem.command = "austin-vscode.mode";
 	austinModeStatusBarItem.text = `$(clock) ${austinMode}`;

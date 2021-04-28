@@ -24,7 +24,8 @@ export function setLineHeat(line: number, own: number, total: number, overallTot
                 margin: "8px"
             },
             overviewRulerColor: color,
-            overviewRulerLane: 1
+            overviewRulerLane: 1,
+            isWholeLine: true,
         });
         editor.setDecorations(lineDecorator, [new vscode.Range(
             editor.document.lineAt(line - 1).range.start,
