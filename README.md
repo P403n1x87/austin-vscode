@@ -3,7 +3,7 @@
 Profile and analyse your Python application inside VS Code using Austin.
 
 <p align="center">
-    <img src="art/flamegraph-heatmap-demo.gif"
+    <img src="https://github.com/P403n1x87/austin-vscode/raw/main/art/flamegraph-heatmap-demo.gif"
         alt="Austin VS Code Extension demo" />
 </p>
 
