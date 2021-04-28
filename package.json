@@ -1,23 +1,89 @@
 {
   "name": "austin-vscode",
   "displayName": "Austin VS Code",
-  "description": "",
-  "version": "0.0.1",
+  "publisher": "p403n1x87",
+  "description": "Austin extension for VS Code",
+  "version": "0.1.0",
   "engines": {
     "vscode": "^1.52.0"
+  },
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/p403n1x87/austin-vscode"
   },
   "categories": [
     "Other"
   ],
+  "keywords": [
+    "python",
+    "profiling",
+    "performance",
+    "devtools"
+  ],
+  "license": "GPL3",
+  "icon": "art/icon.png",
   "activationEvents": [
-    "onCommand:austin-vscode.profile"
+    "onCommand:austin-vscode.profile",
+    "onCommand:austin-vscode.load",
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Austin",
+      "properties": {
+        "austin.path": {
+          "description": "Specifies the absolute path to the Austin binary. Leave blank to discover from PATH",
+          "type": "string"
+        },
+        "austin.interval": {
+          "description": "The sampling interval, in microseconds",
+          "type": "number",
+          "default": 100
+        },
+        "austin.mode": {
+          "description": "Profiling mode",
+          "type": "string",
+          "enum": [
+            "Wall time",
+            "CPU time"
+          ],
+          "enumDescriptions": [
+            "Estimate wall-clock time",
+            "Estimate CPU time"
+          ],
+          "default": "Wall time"
+        }
+      }
+    },
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "flame-graph",
+          "title": "Flame Graph",
+          "icon": "media/austin.svg"
+        }
+      ]
+    },
+    "views": {
+      "flame-graph": [
+        {
+          "type": "webview",
+          "id": "austin-vscode.flameGraph",
+          "name": "Flame Graph",
+          "icon": "media/austin.svg",
+          "visibility": "hidden"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "austin-vscode.profile",
         "title": "Profile with Austin"
+      },
+      {
+        "command": "austin-vscode.load",
+        "title": "Load Austin Samples ..."
       }
     ]
   },
@@ -44,5 +110,9 @@
   },
   "extensionDependencies": [
     "ms-python.python"
-  ]
+  ],
+  "dependencies": {
+    "d3": "^6.7.0",
+    "d3-flame-graph": "^4.0.6"
+  }
 }
