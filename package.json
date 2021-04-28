@@ -21,7 +21,7 @@
     "devtools"
   ],
   "license": "GPL3",
-  "icon": "art/icon.png",
+  "icon": "art/logo.png",
   "activationEvents": [
     "onCommand:austin-vscode.profile",
     "onCommand:austin-vscode.load",
