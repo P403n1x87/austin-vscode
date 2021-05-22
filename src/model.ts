@@ -103,7 +103,7 @@ export function makeHierarchy(file: string, cb: (stats: D3Hierarchy) => void) {
     });
 
     let stats: D3Hierarchy = {
-        "name": "root",
+        "name": file,
         "value": 0,
         "children": [],
         "data": "root",

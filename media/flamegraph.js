@@ -60,13 +60,31 @@ function flameGraph(data) {
         .call(flameGraph);
 
     window.addEventListener('resize', () => { flameGraph.setWidth(document.getElementById('chart').offsetWidth); });
+
+    return flameGraph;
 }
 
 
-flameGraph(vscode.getState());
+const graph = flameGraph(vscode.getState());
 
 
 window.addEventListener('message', event => {
+    if (event.data.search) {
+        graph.search(event.data.search);
+        return;
+    }
+    if (event.data === "reset") {
+        graph.resetZoom();
+        graph.clear();
+        return;
+    }
     flameGraph(event.data);
     vscode.setState(event.data);
 });
+
+document.addEventListener('keydown', (event) => {
+    var name = event.key;
+    var code = event.code;
+    // Alert the key name and key code on keydown
+    vscode.postMessage({ "event": "keydown", "name": name });
+}, false);

@@ -3,7 +3,7 @@
   "displayName": "Austin VS Code",
   "publisher": "p403n1x87",
   "description": "Austin extension for VS Code",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "engines": {
     "vscode": "^1.52.0"
   },
@@ -84,6 +84,19 @@
       {
         "command": "austin-vscode.load",
         "title": "Load Austin Samples ..."
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "austin-vscode.load",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a"
+      },
+      {
+        "command": "austin-vscode.profile",
+        "key": "shift+f5",
+        "mac": "shift+f5",
+        "when": "editorLangId == python"
       }
     ]
   },

@@ -35,13 +35,35 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
             ]
         };
 
-        this._setWelcomeHtml(webviewView.webview);
+        this._setWelcomeHtml();
 
         webviewView.webview.onDidReceiveMessage(data => {
             if (data === "open") {
                 this.openSampleFile();
                 return;
             }
+
+            const webview = webviewView.webview;
+            if (data.event === "keydown") {
+                switch (data.name) {
+                    case "f":
+                        vscode.window.showInputBox({
+                            "prompt": "Search frames",
+                        }).then((value) => {
+                            if (value) {
+                                webview.postMessage({ "search": value });
+                            }
+                        });
+                        break;
+                    case "o":
+                        this.openSampleFile();
+                        break;
+                    case "r":
+                        webview.postMessage("reset");
+                }
+                return;
+            }
+
             const source = data.source;
             const module = data.file;
             const minLine = data.lines ? Math.min(...data.lines) : 0;
@@ -86,7 +108,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                     const terminal = vscode.window.createTerminal("Austin");
                     const config = vscode.workspace.getConfiguration('austin');
                     const austinPath = config.get("path") || "austin";
-                    const sleepless = config.get("mode") == "CPU time" ? "-s" : "";
+                    const sleepless = config.get("mode") === "CPU time" ? "-s" : "";
                     const austinInterval: number = parseInt(config.get("interval") || "100");
 
                     terminal.show();
@@ -110,7 +132,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                                 setLineHeat(k, own, total, overallTotal);
                                 makeHierarchy(outputFile, (data) => {
                                     if (this._view) {
-                                        this._setFlameGraphHtml(this._view.webview);
+                                        this._setFlameGraphHtml();
                                         this._view.show?.();
                                         this._view.webview.postMessage(data);
                                     }
@@ -143,9 +165,10 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                     const currentUri = uris[0];
                     if (currentUri?.scheme === "file") {
                         const outputFile = currentUri.fsPath;
+                        this._setLoadingHtml();
                         makeHierarchy(outputFile, (data) => {
                             if (this._view) {
-                                this._setFlameGraphHtml(this._view.webview);
+                                this._setFlameGraphHtml();
                                 this._view.show?.(true);
                                 this._view.webview.postMessage(data);
                             }
@@ -159,9 +182,10 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private _setFlameGraphHtml(webview: vscode.Webview) {
+    private _setFlameGraphHtml() {
         // Use a nonce to only allow a specific script to be run.
         const nonce = getNonce();
+        const webview = this._view?.webview!;
 
         const d3ScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3', 'dist', 'd3.js'));
         const d3FlameGraphScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3-flame-graph', 'dist', 'd3-flamegraph.js'));
@@ -185,7 +209,33 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 			</html>`;
     }
 
-    private _setWelcomeHtml(webview: vscode.Webview) {
+    private _setLoadingHtml() {
+        const webview = this._view?.webview!;
+        const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
+
+        webview.html = `<!DOCTYPE html>
+			<html lang="en">
+            <head>
+                <link rel="stylesheet" type="text/css" href="${austinCssUri}">
+            </head>
+            <body>
+                <div class="box">
+                    <div class="center">Crunching ...</div>
+                </div>
+
+                <script>
+                const vscode = acquireVsCodeApi();
+                
+                function onOpen() {
+                    vscode.postMessage("open");;
+                }
+                </script>
+            </body>
+			</html>`;
+    }
+
+    private _setWelcomeHtml() {
+        const webview = this._view?.webview!;
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
         const austinLogoUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.svg'));
 
