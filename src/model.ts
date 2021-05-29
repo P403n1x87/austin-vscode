@@ -97,7 +97,7 @@ interface D3Hierarchy {
 }
 
 
-export function makeHierarchy(file: string, cb: (stats: D3Hierarchy) => void) {
+export function makeHierarchy(file: string, lines: boolean, cb: (stats: D3Hierarchy) => void) {
     const readInterface = createInterface({
         input: createReadStream(file)
     });
@@ -122,17 +122,12 @@ export function makeHierarchy(file: string, cb: (stats: D3Hierarchy) => void) {
         let frameList: FrameObject[] = frames.split(';').map(parseFrame);
         stats.value += metric;
 
-        let container = stats.children;
-        frameList.forEach((fo) => {
-            const name = fo.module ? `${fo.scope} (${fo.module})` : fo.scope;
+        let updateContainer = (container: D3Hierarchy[], frame: FrameObject, keyFactory: (frame: FrameObject) => string, newDataFactory: (frame: FrameObject) => any) => {
+            const name: string = keyFactory(frame);
             for (let e of container) {
                 if (e.name === name) {
                     e.value += metric;
-                    if (!e.data.lines.includes(fo.lineNumber)) {
-                        e.data.lines.push(fo.lineNumber);
-                    }
-                    container = e.children;
-                    return;
+                    return e.children;
                 }
             }
             const newContainer: D3Hierarchy[] = [];
@@ -140,9 +135,37 @@ export function makeHierarchy(file: string, cb: (stats: D3Hierarchy) => void) {
                 "name": name,
                 "value": metric,
                 children: newContainer,
-                "data": { "file": fo.module, "lines": [fo.lineNumber], "source": file },
+                "data": newDataFactory(frame),
             });
-            container = newContainer;
+            return newContainer;
+        };
+
+        let container = stats.children;
+        frameList.forEach((fo) => {
+            if (lines) {
+                container = updateContainer(
+                    container,
+                    fo,
+                    (fo) => { return fo.lineNumber ? `${fo.scope} (${fo.module})` : fo.scope; },
+                    (fo) => { return { "file": fo.module, "source": file }; }
+                );
+                if (fo.lineNumber) {
+                    container = updateContainer(
+                        container,
+                        fo,
+                        (fo) => { return `${fo.lineNumber}`; },
+                        (fo) => { return { "file": fo.module, "line": fo.lineNumber, "source": file }; }
+                    );
+                };
+            }
+            else {
+                container = updateContainer(
+                    container,
+                    fo,
+                    (fo) => { return fo.module && fo.lineNumber ? `${fo.scope} (${fo.module})` : fo.scope; },
+                    (fo) => { return { "file": fo.module, "line": fo.lineNumber, "source": file }; }
+                );
+            }
         });
 
     });

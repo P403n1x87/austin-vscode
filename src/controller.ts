@@ -14,6 +14,8 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'austin-vscode.flameGraph';
 
     private _view?: vscode.WebviewView;
+    private _source: string | null = null;
+    private _lines: boolean = false;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -55,9 +57,18 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                             }
                         });
                         break;
+
+                    case "l":
+                        this._lines = !this._lines;
+                        if (this._source) {
+                            this.showFlameGraph(this._source);
+                        }
+                        break;
+
                     case "o":
                         this.openSampleFile();
                         break;
+
                     case "r":
                         webview.postMessage("reset");
                 }
@@ -66,8 +77,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
             const source = data.source;
             const module = data.file;
-            const minLine = data.lines ? Math.min(...data.lines) : 0;
-            const line = Math.max(minLine - 4, 1);
+            const line = data.line || 0;
             if (!source || !module) {
                 return;
             }
@@ -91,6 +101,17 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         });
 
         webviewView.show(true);
+    }
+
+    private showFlameGraph(outputFile: string) {
+        makeHierarchy(outputFile, this._lines, (data) => {
+            if (this._view) {
+                this._setFlameGraphHtml();
+                this._view.show?.(true);
+                this._view.webview.postMessage(data);
+                this._source = outputFile;
+            }
+        });
     }
 
     public async profileScript() {
@@ -130,13 +151,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                                 let own: number, total: number;
                                 [own, total] = v;
                                 setLineHeat(k, own, total, overallTotal);
-                                makeHierarchy(outputFile, (data) => {
-                                    if (this._view) {
-                                        this._setFlameGraphHtml();
-                                        this._view.show?.();
-                                        this._view.webview.postMessage(data);
-                                    }
-                                });
+                                this.showFlameGraph(outputFile);
                             });
                         });
                     }
@@ -166,13 +181,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                     if (currentUri?.scheme === "file") {
                         const outputFile = currentUri.fsPath;
                         this._setLoadingHtml();
-                        makeHierarchy(outputFile, (data) => {
-                            if (this._view) {
-                                this._setFlameGraphHtml();
-                                this._view.show?.(true);
-                                this._view.webview.postMessage(data);
-                            }
-                        });
+                        this.showFlameGraph(outputFile);
                     }
                 }
             });
@@ -220,7 +229,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
             </head>
             <body>
                 <div class="box">
-                    <div class="center">Crunching ...</div>
+                    <div class="center">Crunching the numbers ...</div>
                 </div>
 
                 <script>

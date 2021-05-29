@@ -1,5 +1,7 @@
 # Austin VS Code Extension
 
+![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/p403n1x87.austin-vscode.svg?style=flat-square&color=blue&logo=visual-studio)
+
 Profile and analyse your Python application inside VS Code using Austin.
 
 <p align="center">
@@ -35,6 +37,11 @@ To search through an open flame graph, press <kbd>F</kbd> and type a search
 string. To reset the view, simply press <kbd>R</kbd>. Conveniently, you can
 bring up the open dialog with <kbd>O</kbd> while the focus is on the flame graph
 panel.
+
+To toggle line numbers, press <kbd>L</kbd>. This could be useful when the same
+Python module has multiple methods with the same names (e.g. `__init__`), since
+the function names collected by Austin are not fully qualified.
+
 
 ## Configuration
 

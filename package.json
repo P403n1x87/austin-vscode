@@ -3,7 +3,7 @@
   "displayName": "Austin VS Code",
   "publisher": "p403n1x87",
   "description": "Austin extension for VS Code",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "engines": {
     "vscode": "^1.52.0"
   },

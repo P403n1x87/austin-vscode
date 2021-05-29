@@ -15,13 +15,13 @@ function hslToHex(h, s, l) {
 }
 
 
-var stringToColour = function (str) {
+var stringToColour = function (str, highlight = false) {
     var hash = 0;
     for (var i = 0; i < str.length; i++) {
         hash = str.charCodeAt(i) + ((hash << 5) - hash);
     }
     let h = hash % 360;
-    return hslToHex(h >= 0 ? h : -h, 50, 75);
+    return hslToHex(h >= 0 ? h : -h, 50, highlight ? 90 : 70);
 };
 
 function isEmpty(obj) {
@@ -48,7 +48,11 @@ function flameGraph(data) {
     };
 
     flameGraph.setColorMapper(function (d, originalColor) {
-        return d.highlight ? "#E600E6" : stringToColour(d.data.name);
+        if (!isNaN(+d.data.name)) {
+            return '#808080';
+        }
+        // return stringToColour(d.data.name, d.highlight);
+        return d.highlight ? "#F620F6" : stringToColour(d.data.name);
     });
 
     flameGraph.onClick(function (d) {
