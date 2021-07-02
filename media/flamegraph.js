@@ -15,13 +15,38 @@ function hslToHex(h, s, l) {
 }
 
 
-var stringToColour = function (str, highlight = false) {
+var hash = function (text) {
     var hash = 0;
-    for (var i = 0; i < str.length; i++) {
-        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    for (var i = 0; i < text.length; i++) {
+        hash = text.charCodeAt(i) + ((hash << 5) - hash);
     }
-    let h = hash % 360;
-    return hslToHex(h >= 0 ? h : -h, 50, highlight ? 90 : 70);
+    return hash;
+};
+
+var stringToColour = function (text, highlight = false) {
+    var i = text.indexOf(' ');
+    if (i === -1) {
+        var sat = hash(text) % 20;
+        var hue;
+        switch (text.charAt(0)) {
+            case 'P':
+                hue = 120;
+                break;
+            case 'T':
+                hue = 240;
+                break;
+            default:
+                hue = 0;
+        }
+        return hslToHex(hue, 50 + sat, highlight ? 90 : 70);
+    }
+
+    var scope = text.slice(0, i);
+    var module = text.slice(i + 1);
+    let h = hash(module) % 360;
+    let s = hash(scope) % 10;
+
+    return hslToHex(h >= 0 ? h : -h, 60 + s, highlight ? 90 : 70);
 };
 
 function isEmpty(obj) {
