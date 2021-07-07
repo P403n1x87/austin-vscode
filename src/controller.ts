@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { dirname, join } from 'path';
-import { setLineHeat, clearDecorations } from './view';
+import { setLinesHeat, clearDecorations } from './view';
 import { absolutePath, aggregateByLine, makeHierarchy } from './model';
 
 
@@ -16,6 +16,8 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private _source: string | null = null;
     private _lines: boolean = false;
+    private _stats: Map<string, Map<number, [number, number]>> | null = null;
+    private _overallTotal: number = 0;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -81,21 +83,18 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
             if (!source || !module) {
                 return;
             }
-            aggregateByLine(source, (stats, overallTotal) => {
-                vscode.workspace.openTextDocument(absolutePath(module)).then((doc) => {
-                    vscode.window.showTextDocument(doc, vscode.ViewColumn.One, false).then((editor) => {
-                        clearDecorations();
-                        editor?.revealRange(new vscode.Range(
-                            editor.document.lineAt(line - 1).range.start,
-                            editor.document.lineAt(line - 1).range.end
-                        ));
-                        const lines = stats.get(module);
-                        lines?.forEach((v, k) => {
-                            let own: number, total: number;
-                            [own, total] = v;
-                            setLineHeat(k, own, total, overallTotal);
-                        });
-                    });
+
+            vscode.workspace.openTextDocument(absolutePath(module)).then((doc) => {
+                vscode.window.showTextDocument(doc, vscode.ViewColumn.One, false).then((editor) => {
+                    clearDecorations();
+                    editor?.revealRange(new vscode.Range(
+                        editor.document.lineAt(line - 1).range.start,
+                        editor.document.lineAt(line - 1).range.end
+                    ));
+                    const lines = this._stats!.get(module);
+                    if (lines) {
+                        setLinesHeat(lines, this._overallTotal);
+                    }
                 });
             });
         });
@@ -112,6 +111,18 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 this._source = outputFile;
             }
         });
+    }
+
+    private setStats(stats: Map<string, Map<number, [number, number]>>, overallTotal: number) {
+        this._stats = stats;
+        this._overallTotal = overallTotal;
+        const currentUri = vscode.window.activeTextEditor?.document.uri;
+        if (currentUri?.scheme === "file") {
+            const lines = stats.get(currentUri.fsPath);
+            if (lines) {
+                setLinesHeat(lines, this._overallTotal);
+            }
+        }
     }
 
     public async profileScript() {
@@ -145,15 +156,8 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                     }
                     else {
                         clearDecorations();
-                        aggregateByLine(outputFile, (stats, overallTotal) => {
-                            const lines = stats.get(currentUri.fsPath);
-                            lines?.forEach((v, k) => {
-                                let own: number, total: number;
-                                [own, total] = v;
-                                setLineHeat(k, own, total, overallTotal);
-                                this.showFlameGraph(outputFile);
-                            });
-                        });
+                        this.showFlameGraph(outputFile);
+                        aggregateByLine(outputFile, this.setStats.bind(this));
                     }
 
                     return outputFile;
@@ -182,6 +186,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                         const outputFile = currentUri.fsPath;
                         this._setLoadingHtml();
                         this.showFlameGraph(outputFile);
+                        aggregateByLine(outputFile, this.setStats.bind(this));
                     }
                 }
             });

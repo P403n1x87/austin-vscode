@@ -10,12 +10,12 @@ export function clearDecorations() {
 }
 
 
-export function setLineHeat(line: number, own: number, total: number, overallTotal: number) {
+export function setLineHeat(line: number, own: number, total: number, overallTotal: number, localTotal: number) {
     const ownp = (own * 100 / overallTotal).toFixed(2);
     const totalp = (total * 100 / overallTotal).toFixed(2);
     const editor = vscode.window.activeTextEditor;
     if (editor !== undefined) {
-        const color: string = `rgba(192, 64, 64, ${own / overallTotal})`;
+        const color: string = `rgba(192, 64, 64, ${own / localTotal})`;
         const lineDecorator = vscode.window.createTextEditorDecorationType({
             backgroundColor: color,
             after: {
@@ -33,6 +33,15 @@ export function setLineHeat(line: number, own: number, total: number, overallTot
         )]);
         decorators.push(lineDecorator);
     }
+}
+
+export function setLinesHeat(lines: Map<number, [number, number]>, overallTotal: number) {
+    const localTotal = Array.from(lines.values()).map(v => v[0]).reduce((s, c) => s + c, 0);
+    lines.forEach((v, k) => {
+        let own: number, total: number;
+        [own, total] = v;
+        setLineHeat(k, own, total, overallTotal, localTotal);
+    });
 }
 
 
