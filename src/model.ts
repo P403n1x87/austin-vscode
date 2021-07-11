@@ -2,60 +2,107 @@ import * as vscode from 'vscode';
 import { createReadStream, existsSync } from 'fs';
 import { createInterface } from 'readline';
 import './stringExtension';
+import './mapExtension';
 import { isAbsolute } from 'path';
 
 
-export function absolutePath(path: string) {
-    if (!isAbsolute(path)) {
-        if (vscode.workspace.workspaceFolders) {
-            for (let folder of vscode.workspace.workspaceFolders) {
-                let absolutePath = vscode.Uri.joinPath(folder.uri, path).fsPath
-                if (existsSync(absolutePath)) {
-                    return absolutePath;
-                }
-            }
-        }
+export class TopStats {
+    public scope: string | null = null;
+    public module: string | null = null;
+    public own: number = 0;
+    public total: number = 0;
+    public callees: Map<string, TopStats> = new Map();
+    public callers: Map<string, TopStats> = new Map();
+    public lines: Set<number> = new Set();
+
+    public constructor(scope: string | null = null, module: string | null = null) {
+        this.scope = scope;
+        this.module = module;
     }
-    return path;
+
+    key() {
+        return `${this.module}:${this.scope}`;
+    }
+
 }
 
-
-interface FrameObject {
-    scope: string;
-    lineNumber: number;
-    module: string;
-};
-
-
-function parseFrame(frame: string): FrameObject {
-    let module: string, scope: string, line: string;
-    [module, scope, line] = frame.rsplit(":", 2);
-
-    return { "scope": scope, "lineNumber": Number(line), "module": absolutePath(module) };
+export interface AustinStats {
+    hierarchy: D3Hierarchy;
+    lineMap: Map<string, Map<number, [number, number]>>;
+    callStack: TopStats;
+    top: Map<string, TopStats>;
+    overallTotal: number;
+    source: string | null;
 }
 
+export class AustinStats implements AustinStats {
 
-export function aggregateByLine(file: string, cb: (stats: Map<string, Map<number, [number, number]>>, overallTotal: number) => void) {
-    const readInterface = createInterface({
-        input: createReadStream(file)
-    });
+    private _callbacks: ((stats: AustinStats) => void)[];
 
-    let stats = new Map<string, Map<number, [number, number]>>();
-    let overallTotal = 0;
+    public constructor() {
+        this.lineMap = new Map();
+        this.overallTotal = 0;
+        this.top = new Map();
+        this.hierarchy = {
+            "name": "",
+            "value": 0,
+            "children": [],
+            "data": "root",
+        };
+        this.callStack = new TopStats();
+        this._callbacks = [];
+        this.source = null;
+    }
 
-    readInterface.on("line", (line) => {
-        if (line.startsWith('#')) {
+    clear() {
+        this.top.clear();
+        this.lineMap.clear();
+        this.overallTotal = 0;
+        this.hierarchy = {
+            "name": this.source!,
+            "value": 0,
+            "children": [],
+            "data": "root",
+        };
+    }
+
+    private updateTop(frameList: FrameObject[], metric: number) {
+        if (frameList.length === 0) {
             return;
         }
 
-        let frames: string, metrics: string;
-        [frames, metrics] = line.rsplit(' ', 1);
-        const metric = Number(metrics);  // TODO: Assuming metrics is a single number
-        overallTotal += metric;
-
         let fo: FrameObject | undefined = undefined;
-        let frameList: FrameObject[] = frames.split(';').slice(2).map(parseFrame);
         let seenFrames = new Set<string>(); // Prevent inflating times (e.g. recursive functions)
+        let stats = this.top;
+        let caller: TopStats | null = null;
+        frameList.forEach((fo) => {
+            let key = `${fo.module}:${fo.scope}`;
+            if (seenFrames.has(key)) {
+                return;
+            }
+            seenFrames.add(key);
+            if (!(stats.has(key))) {
+                stats.set(key, new TopStats(fo.scope, fo.module));
+            }
+            let topStats = stats.get(key)!;
+            topStats.total += metric;
+            topStats.lines.add(fo.lineNumber);
+            if (caller && !topStats.callers.has(caller.key())) {
+                topStats.callers.set(caller.key(), caller);
+            }
+            caller = topStats;
+        });
+
+        // Set own time to the top of the stack
+        fo = frameList[frameList.length - 1];
+        let key = `${fo.module}:${fo.scope}`;
+        stats.get(key)!.own += metric;
+    }
+
+    private updateLineMap(frameList: FrameObject[], metric: number) {
+        let fo: FrameObject | undefined = undefined;
+        let seenFrames = new Set<string>(); // Prevent inflating times (e.g. recursive functions)
+        let stats = this.lineMap;
         frameList.forEach((fo) => {
             if (seenFrames.has(`${fo.module}:${fo.lineNumber}`)) {
                 return;
@@ -83,43 +130,10 @@ export function aggregateByLine(file: string, cb: (stats: Map<string, Map<number
             own += metric;
             module?.set(fo.lineNumber, [own, total]);
         }
-    });
+    }
 
-    readInterface.on("close", () => { cb(stats, overallTotal); });
-}
-
-
-interface D3Hierarchy {
-    name: string;
-    value: number;
-    children: D3Hierarchy[];
-    data?: any;
-}
-
-
-export function makeHierarchy(file: string, lines: boolean, cb: (stats: D3Hierarchy) => void) {
-    const readInterface = createInterface({
-        input: createReadStream(file)
-    });
-
-    let stats: D3Hierarchy = {
-        "name": file,
-        "value": 0,
-        "children": [],
-        "data": "root",
-    };
-
-    readInterface.on("line", (line) => {
-        if (line.startsWith('#')) {
-            return;
-        }
-
-        let frames: string, metrics: string;
-        [frames, metrics] = line.rsplit(' ', 1);
-        const metric = Number(metrics);  // TODO: Assuming metrics is a single number
-
-        let fo: FrameObject | undefined = undefined;
-        let frameList: FrameObject[] = frames.split(';').map(parseFrame);
+    private updateHierarchy(frameList: FrameObject[], metric: number) {
+        let stats = this.hierarchy;
         stats.value += metric;
 
         let updateContainer = (container: D3Hierarchy[], frame: FrameObject, keyFactory: (frame: FrameObject) => string, newDataFactory: (frame: FrameObject) => any) => {
@@ -142,19 +156,19 @@ export function makeHierarchy(file: string, lines: boolean, cb: (stats: D3Hierar
 
         let container = stats.children;
         frameList.forEach((fo) => {
-            if (lines) {
+            if (false) { // TODO: Consider whether to re-enable per-line flamegraphs or not.
                 container = updateContainer(
                     container,
                     fo,
                     (fo) => { return fo.lineNumber ? `${fo.scope} (${fo.module})` : fo.scope; },
-                    (fo) => { return { "file": fo.module, "source": file }; }
+                    (fo) => { return { "file": fo.module, "source": this.source }; }
                 );
                 if (fo.lineNumber) {
                     container = updateContainer(
                         container,
                         fo,
                         (fo) => { return `${fo.lineNumber}`; },
-                        (fo) => { return { "file": fo.module, "line": fo.lineNumber, "source": file }; }
+                        (fo) => { return { "file": fo.module, "line": fo.lineNumber, "source": this.source }; }
                     );
                 };
             }
@@ -163,12 +177,98 @@ export function makeHierarchy(file: string, lines: boolean, cb: (stats: D3Hierar
                     container,
                     fo,
                     (fo) => { return fo.module && fo.lineNumber ? `${fo.scope} (${fo.module})` : fo.scope; },
-                    (fo) => { return { "file": fo.module, "line": fo.lineNumber, "source": file }; }
+                    (fo) => { return { "file": fo.module, "line": fo.lineNumber, "source": this.source }; }
                 );
             }
         });
+    }
 
-    });
+    private updateCallStack(frameList: FrameObject[], metric: number) {
+        let stats: TopStats = this.callStack!;
+        frameList.forEach((fo) => {
+            let key = `${fo.module}:${fo.scope}`;
+            let callee = stats.callees.getDefault(key, () => new TopStats(fo.scope, fo.module));
+            callee.lines.add(fo.lineNumber);
+            // stats?.total += metric;
+            stats = callee;
+        });
+    }
 
-    readInterface.on("close", () => { cb(stats); });
+    public update(sample: string) {
+        if (sample.startsWith('#')) {
+            return;
+        }
+
+        let frames: string, metrics: string;
+        [frames, metrics] = sample.rsplit(' ', 1);
+        const metric = Number(metrics);  // TODO: Assuming metrics is a single number
+        this.overallTotal += metric;
+
+        let callStack = frames.split(';');
+        let frameList: FrameObject[] = callStack.map(parseFrame);
+
+        this.updateLineMap(frameList.slice(2), metric);
+        this.updateTop(frameList.slice(2), metric);
+        this.updateHierarchy(frameList, metric);
+        this.updateCallStack(frameList, metric);
+    }
+
+    public registerCallback(cb: (stats: AustinStats) => void) {
+        this._callbacks.push(cb);
+    }
+
+    public readFromFile(file: string) {
+        this.source = file;
+        this.clear();
+
+        const readInterface = createInterface({
+            input: createReadStream(file)
+        });
+
+
+        readInterface.on("line", this.update.bind(this));
+
+        readInterface.on("close", () => {
+            [...this.top.values()].forEach(v => { v.own /= this.overallTotal; v.total /= this.overallTotal; });
+            this._callbacks.forEach(cb => cb(this));
+        });
+    }
+}
+
+
+export function absolutePath(path: string) {
+    if (!isAbsolute(path)) {
+        if (vscode.workspace.workspaceFolders) {
+            for (let folder of vscode.workspace.workspaceFolders) {
+                let absolutePath = vscode.Uri.joinPath(folder.uri, path).fsPath;
+                if (existsSync(absolutePath)) {
+                    return absolutePath;
+                }
+            }
+        }
+    }
+    return path;
+}
+
+
+interface FrameObject {
+    scope: string;
+    lineNumber: number;
+    module: string;
+};
+
+
+function parseFrame(frame: string): FrameObject {
+    let module: string, scope: string, line: string;
+    [module, scope, line] = frame.rsplit(":", 2);
+
+    return { "scope": scope, "lineNumber": Number(line), "module": absolutePath(module) };
+}
+
+
+interface D3Hierarchy {
+    name: string;
+    value: number;
+    children: D3Hierarchy[];
+    data?: any;
 }

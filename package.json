@@ -25,7 +25,8 @@
   "activationEvents": [
     "onCommand:austin-vscode.profile",
     "onCommand:austin-vscode.load",
-    "onStartupFinished"
+    "onStartupFinished",
+    "onView:austinTreeView"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -63,6 +64,13 @@
           "title": "Flame Graph",
           "icon": "media/austin.svg"
         }
+      ],
+      "activitybar": [
+        {
+          "id": "austin-stats",
+          "title": "Austin Stats",
+          "icon": "media/austin.svg"
+        }
       ]
     },
     "views": {
@@ -73,6 +81,18 @@
           "name": "Flame Graph",
           "icon": "media/austin.svg",
           "visibility": "hidden"
+        }
+      ],
+      "austin-stats": [
+        {
+          "id": "austin-vscode.callStacks",
+          "name": "Call Stacks",
+          "contextualTitle": "Call Stacks"
+        },
+        {
+          "id": "austin-vscode.top",
+          "name": "Top",
+          "contextualTitle": "Top"
         }
       ]
     },

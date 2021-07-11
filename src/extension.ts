@@ -1,6 +1,10 @@
 import * as vscode from 'vscode';
 import { clearDecorations, formatInterval } from './view';
-import { FlameGraphViewProvider } from './controller';
+import { FlameGraphViewProvider } from './providers/flamegraph';
+import { AustinController } from './controller';
+import { AustinStats } from './model';
+import { TopDataProvider } from './providers/top';
+import { CallStackDataProvider } from './providers/callstack';
 
 
 export function activate(context: vscode.ExtensionContext) {
@@ -9,7 +13,16 @@ export function activate(context: vscode.ExtensionContext) {
 		clearDecorations();
 	});
 
+	const stats = new AustinStats();
+	const controller = new AustinController(stats);
+
 	const flameGraphViewProvider = new FlameGraphViewProvider(context.extensionUri);
+	const topProvider = new TopDataProvider();
+	const callStackProvider = new CallStackDataProvider();
+
+	stats.registerCallback((stats) => flameGraphViewProvider.refresh(stats));
+	stats.registerCallback((stats) => topProvider.refresh(stats));
+	stats.registerCallback((stats) => callStackProvider.refresh(stats));
 
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(
@@ -19,14 +32,24 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
+		vscode.window.registerTreeDataProvider(TopDataProvider.viewType, topProvider)
+	);
+
+	context.subscriptions.push(
+		vscode.window.registerTreeDataProvider(CallStackDataProvider.viewType, callStackProvider)
+	);
+
+	context.subscriptions.push(
 		vscode.commands.registerCommand('austin-vscode.profile', () => {
-			flameGraphViewProvider.profileScript();
+			flameGraphViewProvider.showLoading();
+			controller.profileScript();
 		})
 	);
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('austin-vscode.load', () => {
-			flameGraphViewProvider.openSampleFile();
+			flameGraphViewProvider.showLoading();
+			controller.openSampleFile();
 		})
 	);
 
@@ -44,7 +67,7 @@ export function activate(context: vscode.ExtensionContext) {
 			// Show interval dialog
 			vscode.window.showInputBox({
 				"value": config.get("interval"),
-				"prompt": "Enter new Austin sampling inteval",
+				"prompt": "Enter new Austin sampling interval",
 				"validateInput": (value) => {
 					if (isNaN(parseInt(value)) || !/^\d+$/.test(value)) { return "The interval must be an integer."; }
 				},
@@ -81,14 +104,14 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	if (vscode.window.activeTextEditor?.document.languageId == "python") {
+	if (vscode.window.activeTextEditor?.document.languageId === "python") {
 		austinModeStatusBarItem.show();
 		austinIntervalStatusBarItem.show();
 	}
 
 
 	vscode.window.onDidChangeActiveTextEditor((event) => {
-		if (event?.document.languageId == "python") {
+		if (event?.document.languageId === "python") {
 			austinModeStatusBarItem.show();
 			austinIntervalStatusBarItem.show();
 		}
