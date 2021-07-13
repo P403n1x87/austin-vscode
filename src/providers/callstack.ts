@@ -17,11 +17,15 @@ export class CallStackItem extends vscode.TreeItem {
     constructor(
         public readonly stats: TopStats,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        // public readonly command?: vscode.Command
     ) {
         super(_normalizeScope(stats.scope!), collapsibleState);
 
         this.tooltip = stats.module ? `in ${stats.module}` : undefined;
+        this.command = {
+            command: 'austin-vscode.openSourceAtLine',
+            title: "open source at line",
+            arguments: [this.stats.module, Math.min(...this.stats.lines)]
+        };
         // this.description = this.version;
     }
 

@@ -64,6 +64,7 @@ export class AustinStats implements AustinStats {
             "children": [],
             "data": "root",
         };
+        this.callStack = new TopStats();
     }
 
     private updateTop(frameList: FrameObject[], metric: number) {
@@ -176,8 +177,8 @@ export class AustinStats implements AustinStats {
                 container = updateContainer(
                     container,
                     fo,
-                    (fo) => { return fo.module && fo.lineNumber ? `${fo.scope} (${fo.module})` : fo.scope; },
-                    (fo) => { return { "file": fo.module, "line": fo.lineNumber, "source": this.source }; }
+                    (fo) => { return fo.scope; /*fo.module && fo.lineNumber ? `${fo.scope} (${fo.module})` : fo.scope;*/ },
+                    (fo) => { return { "file": fo.module, "name": fo.scope, "line": fo.lineNumber, "source": this.source }; }
                 );
             }
         });
@@ -195,7 +196,7 @@ export class AustinStats implements AustinStats {
     }
 
     public update(sample: string) {
-        if (sample.startsWith('#')) {
+        if (sample.startsWith('# ') || sample.length === 0) {
             return;
         }
 

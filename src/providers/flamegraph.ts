@@ -76,24 +76,9 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
             const source = data.source;
             const module = data.file;
-            const line = data.line || 0;
-            if (!source || !module) {
-                return;
+            if (source && module) {
+                vscode.commands.executeCommand('austin-vscode.openSourceAtLine', module, data.line || 0);
             }
-
-            vscode.workspace.openTextDocument(absolutePath(module)).then((doc) => {
-                vscode.window.showTextDocument(doc, vscode.ViewColumn.One, false).then((editor) => {
-                    clearDecorations();
-                    editor?.revealRange(new vscode.Range(
-                        editor.document.lineAt(line - 1).range.start,
-                        editor.document.lineAt(line - 1).range.end
-                    ));
-                    const lines = this._stats!.lineMap.get(module);
-                    if (lines) {
-                        setLinesHeat(lines, this._stats!.overallTotal);
-                    }
-                });
-            });
         });
 
         this._stats ? this._setFlameGraphHtml() : this._setWelcomeHtml();
@@ -125,6 +110,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
         const d3ScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3', 'dist', 'd3.js'));
         const d3FlameGraphScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3-flame-graph', 'dist', 'd3-flamegraph.js'));
+        const d3FlameGraphTooltipScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3-flame-graph', 'dist', 'd3-flamegraph-tooltip.js'));
         const d3FlameGraphCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3-flame-graph', 'dist', 'd3-flamegraph.css'));
         const flameGraphScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'flamegraph.js'));
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
@@ -140,6 +126,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
                 <script type="text/javascript" src="${d3ScriptUri}"></script>
                 <script type="text/javascript" src="${d3FlameGraphScriptUri}"></script>
+                <script type="text/javascript" src="${d3FlameGraphTooltipScriptUri}"></script>
                 <script type="text/javascript" src="${flameGraphScriptUri}"></script>
             </body>
 			</html>`;

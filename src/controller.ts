@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { dirname, join } from 'path';
-import { clearDecorations } from './view';
-import { AustinStats } from './model';
+import { clearDecorations, setLinesHeat } from './view';
+import { absolutePath, AustinStats } from './model';
 
 
 function delay(ms: number) {
@@ -74,6 +74,22 @@ export class AustinController {
                     this.stats.readFromFile(austinFile);
                 }
             }
+        });
+    }
+
+    public openSourceFileAtLine(module: string, line: number) {
+        vscode.workspace.openTextDocument(absolutePath(module)).then((doc) => {
+            vscode.window.showTextDocument(doc, vscode.ViewColumn.One, false).then((editor) => {
+                clearDecorations();
+                editor?.revealRange(new vscode.Range(
+                    editor.document.lineAt(line - 1).range.start,
+                    editor.document.lineAt(line - 1).range.end
+                ));
+                const lines = this.stats.lineMap.get(module);
+                if (lines) {
+                    setLinesHeat(lines, this.stats.overallTotal);
+                }
+            });
         });
     }
 }

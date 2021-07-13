@@ -53,6 +53,12 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+	context.subscriptions.push(
+		vscode.commands.registerCommand('austin-vscode.openSourceAtLine', (module: string, line: number) => {
+			controller.openSourceFileAtLine(module, line);
+		})
+	);
+
 	// ---- Interval selector ----
 	const config = vscode.workspace.getConfiguration('austin');
 	const austinInterval: number = parseInt(config.get("interval") || "100");

@@ -6,11 +6,15 @@ export class TopItem extends vscode.TreeItem {
     constructor(
         public readonly stats: TopStats,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        // public readonly command?: vscode.Command
     ) {
-        super(`${(stats.own * 100).toFixed(2)}% | ${(stats.total * 100).toFixed(2)}% | ${stats.scope}`, collapsibleState);
+        super(`[ ${(stats.own * 100).toFixed(2)}% | ${(stats.total * 100).toFixed(2)}% ] ${stats.scope}`, collapsibleState);
 
         this.tooltip = `in ${stats.module}`;
+        this.command = {
+            command: 'austin-vscode.openSourceAtLine',
+            title: "open source at line",
+            arguments: [this.stats.module, Math.min(...this.stats.lines)]
+        };
         // this.description = this.version;
     }
 
