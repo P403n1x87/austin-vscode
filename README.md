@@ -5,7 +5,7 @@
 Profile and analyse your Python application inside VS Code using Austin.
 
 <p align="center">
-    <img src="https://github.com/P403n1x87/austin-vscode/raw/main/art/flamegraph-heatmap-demo.gif"
+    <img src="https://github.com/P403n1x87/austin-vscode/raw/main/art/demo.gif"
         alt="Austin VS Code Extension demo" />
 </p>
 
@@ -38,13 +38,17 @@ string. To reset the view, simply press <kbd>R</kbd>. Conveniently, you can
 bring up the open dialog with <kbd>O</kbd> while the focus is on the flame graph
 panel.
 
-To toggle line numbers, press <kbd>L</kbd>. This could be useful when the same
+The extension also adds two interactive tree views in the side bar to explore
+the sampled call stack and the top functions. Click on the Austin logo in the
+activity bar to reveal them.
+
+<!-- To toggle line numbers, press <kbd>L</kbd>. This could be useful when the same
 Python module has multiple methods with the same names (e.g. `__init__`), since
-the function names collected by Austin are not fully qualified.
+the function names collected by Austin are not fully qualified. -->
 
 
 ## Configuration
 
-Whenver you have an active Python script, the sampling interval and mode
+Whenever you have an active Python script, the sampling interval and mode
 selector will appear  on the status bar. Select between wall-clock time and CPU
 time sampling, and the sampling interval in microseconds.

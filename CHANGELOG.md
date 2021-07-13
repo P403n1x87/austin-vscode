@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.6.0]
+
+- Added sampled call stacks and top functions views in the side bar
+- Improved the appearance of the flame graph
+- Removed line-level granularity
+
 ## [0.5.0]
 
 - Cache stats generation for higher responsiveness
