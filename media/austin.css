@@ -38,3 +38,14 @@ button {
     text-decoration: none;
     display: inline-block;
 }
+
+.d3-flame-graph rect {
+    stroke-width: 1px;
+    stroke-opacity: 0.33;
+    fill-opacity: .8;
+}
+
+.d3-flame-graph-label {
+    margin-top: 4px;
+    color: antiquewhite;
+}

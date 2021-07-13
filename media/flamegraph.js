@@ -23,30 +23,35 @@ var hash = function (text) {
     return hash;
 };
 
-var stringToColour = function (text, highlight = false) {
-    var i = text.indexOf(' ');
-    if (i === -1) {
-        var sat = hash(text) % 20;
-        var hue;
-        switch (text.charAt(0)) {
-            case 'P':
-                hue = 120;
-                break;
-            case 'T':
-                hue = 240;
-                break;
-            default:
-                hue = 0;
-        }
-        return hslToHex(hue, 50 + sat, highlight ? 90 : 70);
+var stringToColour = function (data, highlight = false) {
+    let name = data.name;
+    let scope = data.data.name;
+    let module = data.data.file;
+
+    if (!module) {
+        return hslToHex(0, 10, highlight ? 90 : 70);
     }
 
-    var scope = text.slice(0, i);
-    var module = text.slice(i + 1);
-    let h = hash(module) % 360;
-    let s = hash(scope) % 10;
+    if (!scope) {
+        scope = name;
+    }
 
-    return hslToHex(h >= 0 ? h : -h, 60 + s, highlight ? 90 : 70);
+    var sat = hash(scope) % 20;
+    var hue;
+    switch (scope.charAt(0)) {
+        case 'P':
+            hue = 120;
+            break;
+        case 'T':
+            hue = 240;
+            break;
+        default:
+            let h = hash(module) % 360;
+            let s = hash(scope) % 10;
+            return hslToHex(h >= 0 ? h : -h, 60 + s, highlight ? 90 : 70);
+    }
+
+    return hslToHex(hue, 0 + sat, highlight ? 90 : 70);
 };
 
 function isEmpty(obj) {
@@ -64,7 +69,8 @@ function flameGraph(data) {
         .transitionDuration(250)
         .minFrameSize(0)
         .transitionEase(d3.easeCubic)
-        .inverted(true);
+        .inverted(true)
+        .cellHeight(24);
 
     flameGraph.setWidth = function (width) {
         flameGraph.width(width);
@@ -77,8 +83,12 @@ function flameGraph(data) {
             return '#808080';
         }
         // return stringToColour(d.data.name, d.highlight);
-        return d.highlight ? "#F620F6" : stringToColour(d.data.name);
+        return d.highlight ? "#F620F6" : stringToColour(d.data);
     });
+
+    var tip = flamegraph.tooltip.defaultFlamegraphTooltip()
+        .html(function (d) { return d.data.value + (d.data.data.file ? ", in " + d.data.data.file : ""); });
+    flameGraph.tooltip(tip);
 
     flameGraph.onClick(function (d) {
         vscode.postMessage(d.data.data);
