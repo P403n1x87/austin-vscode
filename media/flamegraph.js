@@ -94,6 +94,10 @@ function flameGraph(data) {
         vscode.postMessage(d.data.data);
     });
 
+    flameGraph.setSearchMatch(function (d, term) {
+        return d.data.name.indexOf(term) !== -1 || (d.data.data.file && d.data.data.file.indexOf(term) !== -1);
+    });
+
     d3.select("#chart")
         .datum(data)
         .call(flameGraph);

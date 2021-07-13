@@ -37,7 +37,8 @@ export interface AustinStats {
 
 export class AustinStats implements AustinStats {
 
-    private _callbacks: ((stats: AustinStats) => void)[];
+    private _beforeCbs: (() => void)[];
+    private _afterCbs: ((stats: AustinStats) => void)[];
 
     public constructor() {
         this.lineMap = new Map();
@@ -50,7 +51,8 @@ export class AustinStats implements AustinStats {
             "data": "root",
         };
         this.callStack = new TopStats();
-        this._callbacks = [];
+        this._beforeCbs = [];
+        this._afterCbs = [];
         this.source = null;
     }
 
@@ -214,8 +216,13 @@ export class AustinStats implements AustinStats {
         this.updateCallStack(frameList, metric);
     }
 
-    public registerCallback(cb: (stats: AustinStats) => void) {
-        this._callbacks.push(cb);
+    public registerBeforeCallback(cb: () => void) {
+        this._beforeCbs.push(cb);
+    }
+
+
+    public registerAfterCallback(cb: (stats: AustinStats) => void) {
+        this._afterCbs.push(cb);
     }
 
     public readFromFile(file: string) {
@@ -226,12 +233,13 @@ export class AustinStats implements AustinStats {
             input: createReadStream(file)
         });
 
+        this._beforeCbs.forEach(cb => cb());
 
         readInterface.on("line", this.update.bind(this));
 
         readInterface.on("close", () => {
             [...this.top.values()].forEach(v => { v.own /= this.overallTotal; v.total /= this.overallTotal; });
-            this._callbacks.forEach(cb => cb(this));
+            this._afterCbs.forEach(cb => cb(this));
         });
     }
 }

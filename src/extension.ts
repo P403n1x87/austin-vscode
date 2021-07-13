@@ -20,9 +20,10 @@ export function activate(context: vscode.ExtensionContext) {
 	const topProvider = new TopDataProvider();
 	const callStackProvider = new CallStackDataProvider();
 
-	stats.registerCallback((stats) => flameGraphViewProvider.refresh(stats));
-	stats.registerCallback((stats) => topProvider.refresh(stats));
-	stats.registerCallback((stats) => callStackProvider.refresh(stats));
+	stats.registerBeforeCallback(() => flameGraphViewProvider.showLoading());
+	stats.registerAfterCallback((stats) => flameGraphViewProvider.refresh(stats));
+	stats.registerAfterCallback((stats) => topProvider.refresh(stats));
+	stats.registerAfterCallback((stats) => callStackProvider.refresh(stats));
 
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(
@@ -41,14 +42,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('austin-vscode.profile', () => {
-			flameGraphViewProvider.showLoading();
 			controller.profileScript();
 		})
 	);
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('austin-vscode.load', () => {
-			flameGraphViewProvider.showLoading();
 			controller.openSampleFile();
 		})
 	);
