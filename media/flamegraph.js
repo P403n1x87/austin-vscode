@@ -58,6 +58,18 @@ function isEmpty(obj) {
     return obj && Object.keys(obj).length === 0 && obj.constructor === Object;
 }
 
+function esc(text) {
+    return text.replace("<", "&lt;").replace(">", "&gt;")
+}
+
+function time_label(d, parent) {
+    return (
+        esc(d.data.name) + " 🕘 " + d.data.value.toString() +
+        " μs (" + (d.data.value / parent.data.value * 100).toFixed(2) + "%)" +
+        (d.data.data.file ? " in " + d.data.data.file : "")
+    );
+}
+
 
 function flameGraph(data) {
     if (!data || isEmpty(data)) {
@@ -65,12 +77,26 @@ function flameGraph(data) {
     }
 
     var flameGraph = flamegraph()
-        .width(document.getElementById('chart').offsetWidth)
+        .width(document.getElementById('chart').scrollWidth)
         .transitionDuration(250)
         .minFrameSize(0)
         .transitionEase(d3.easeCubic)
         .inverted(true)
-        .cellHeight(24);
+        .cellHeight(24)
+        .label(function (d) {
+            var c = ""
+            for (var e in d) { c += " " + e; }
+            var parent = d;
+            try {
+                while (parent.parent.parent) {
+                    parent = parent.parent;
+                }
+            }
+            catch (err) {
+                // parent.parent is undefied
+            }
+            return time_label(d, parent);
+        });
 
     flameGraph.setWidth = function (width) {
         flameGraph.width(width);
@@ -86,9 +112,7 @@ function flameGraph(data) {
         return d.highlight ? "#F620F6" : stringToColour(d.data);
     });
 
-    var tip = flamegraph.tooltip.defaultFlamegraphTooltip()
-        .html(function (d) { return d.data.value + (d.data.data.file ? ", in " + d.data.data.file : ""); });
-    flameGraph.tooltip(tip);
+    flameGraph.setDetailsElement(document.getElementById("footer"));
 
     flameGraph.onClick(function (d) {
         vscode.postMessage(d.data.data);
@@ -102,7 +126,7 @@ function flameGraph(data) {
         .datum(data)
         .call(flameGraph);
 
-    window.addEventListener('resize', () => { flameGraph.setWidth(document.getElementById('chart').offsetWidth); });
+    window.addEventListener('resize', () => { flameGraph.setWidth(document.getElementById('chart').scrollWidth); });
 
     return flameGraph;
 }
@@ -114,15 +138,30 @@ const graph = flameGraph(vscode.getState());
 window.addEventListener('message', event => {
     if (event.data.search) {
         graph.search(event.data.search);
-        return;
     }
-    if (event.data === "reset") {
+    else if (event.data.meta) {
+        let modeSpan = document.getElementById("mode");
+        let mode;
+        switch (event.data.meta.mode) {
+            case "cpu":
+                mode = "CPU Time Profile";
+                break;
+            case "wall":
+                mode = "Wall Time Profile";
+                break;
+            default:
+                mode = "<unsupported profile mode>";
+        }
+        modeSpan.innerHTML = mode;
+    }
+    else if (event.data === "reset") {
         graph.resetZoom();
         graph.clear();
-        return;
     }
-    flameGraph(event.data);
-    vscode.setState(event.data);
+    else {
+        flameGraph(event.data);
+        vscode.setState(event.data);
+    }
 });
 
 document.addEventListener('keydown', (event) => {
