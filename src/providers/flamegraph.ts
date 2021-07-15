@@ -92,6 +92,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
             this._setFlameGraphHtml();
             this._view.show?.(true);
             this._view.webview.postMessage(stats.hierarchy);
+            this._view.webview.postMessage({ "meta": { "mode": stats.metadata.get("mode") } });
             // this._source = austinFile;
         }
         const currentUri = vscode.window.activeTextEditor?.document.uri;
@@ -110,10 +111,10 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
         const d3ScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3', 'dist', 'd3.js'));
         const d3FlameGraphScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3-flame-graph', 'dist', 'd3-flamegraph.js'));
-        const d3FlameGraphTooltipScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3-flame-graph', 'dist', 'd3-flamegraph-tooltip.js'));
         const d3FlameGraphCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3-flame-graph', 'dist', 'd3-flamegraph.css'));
         const flameGraphScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'flamegraph.js'));
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
+        const austinLogoUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin-light.svg'));
 
         webview.html = `<!DOCTYPE html>
 			<html lang="en">
@@ -122,11 +123,12 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 <link rel="stylesheet" type="text/css" href="${austinCssUri}">
             </head>
             <body class="logo">
+                <div id="header"><img src="${austinLogoUri}" /> <span class="vc" id="mode"/></div>
                 <div id="chart"></div>
+                <div id="footer"></div>
 
                 <script type="text/javascript" src="${d3ScriptUri}"></script>
                 <script type="text/javascript" src="${d3FlameGraphScriptUri}"></script>
-                <script type="text/javascript" src="${d3FlameGraphTooltipScriptUri}"></script>
                 <script type="text/javascript" src="${flameGraphScriptUri}"></script>
             </body>
 			</html>`;

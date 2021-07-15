@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.6.1]
+
+- Improved tooltip
+
 ## [0.6.0]
 
 - Added sampled call stacks and top functions views in the side bar

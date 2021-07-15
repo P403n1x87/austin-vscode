@@ -33,6 +33,7 @@ export interface AustinStats {
     top: Map<string, TopStats>;
     overallTotal: number;
     source: string | null;
+    metadata: Map<string, string>;
 }
 
 export class AustinStats implements AustinStats {
@@ -54,6 +55,7 @@ export class AustinStats implements AustinStats {
         this._beforeCbs = [];
         this._afterCbs = [];
         this.source = null;
+        this.metadata = new Map();
     }
 
     clear() {
@@ -67,6 +69,7 @@ export class AustinStats implements AustinStats {
             "data": "root",
         };
         this.callStack = new TopStats();
+        this.metadata = new Map();
     }
 
     private updateTop(frameList: FrameObject[], metric: number) {
@@ -199,6 +202,8 @@ export class AustinStats implements AustinStats {
 
     public update(sample: string) {
         if (sample.startsWith('# ') || sample.length === 0) {
+            let [key, value] = sample.slice(2).split(": ");
+            this.metadata.set(key, value);
             return;
         }
 
