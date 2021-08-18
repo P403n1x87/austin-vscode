@@ -4,6 +4,7 @@ import { AustinCommandArguments } from "../utils/commandFactory";
 
 import { ChildProcess, spawn } from 'child_process';
 import { AustinStats } from '../model';
+import { clearDecorations, setLinesHeat } from '../view';
 
 export class AustinCommandExecutor implements vscode.Pseudoterminal  {
     private austinProcess: ChildProcess | undefined;
@@ -21,7 +22,12 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal  {
 	private fileWatcher: vscode.FileSystemWatcher | undefined;
 
     private showStats() {
+        clearDecorations();
         this.stats.readFromFile(this.outputFile);
+        const lines = this.stats.lineMap.get(this.outputFile);
+        if (lines) {
+            setLinesHeat(lines, this.stats.overallTotal);
+        }
     }
 
 	open(initialDimensions: vscode.TerminalDimensions | undefined): void {
