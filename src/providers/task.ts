@@ -1,13 +1,11 @@
 import * as vscode from "vscode";
 import { getAustinCommand } from "../utils/commandFactory";
+import { AustinCommandExecutor } from "./executor";
 
 export class AustinProfileTaskProvider implements vscode.TaskProvider {
   private austinPromise: Thenable<vscode.Task[]> | undefined = undefined;
 
   constructor(private output: vscode.OutputChannel) {
-    if (!vscode.workspace.workspaceFolders) {
-      return;
-    }
   }
 
   public provideTasks(): Thenable<vscode.Task[]> | undefined {
@@ -20,14 +18,16 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
   public resolveTask(_task: vscode.Task): vscode.Task | undefined {
     // resolveTask requires that the same definition object be used.
     const definition: AustinProfileTaskDefinition = <any>_task.definition;
-    const cmd = getAustinCommand(".austin-vscode", definition.file, definition.args, definition.austinArgs);
+    const command = getAustinCommand(".austin-vscode", definition.file, definition.args, definition.austinArgs);
     return new vscode.Task(
         definition,
         _task.scope ?? vscode.TaskScope.Workspace,
         "profile austin",
         "austin",
-        new vscode.ShellExecution(
-            cmd
+        new vscode.CustomExecution(
+          async (): Promise<vscode.Pseudoterminal> => {
+            return new AustinCommandExecutor(command, this.output);
+          }
         )
     );
   }

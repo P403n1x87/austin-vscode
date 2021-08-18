@@ -21,7 +21,8 @@ export class AustinController {
             const outputFile = join(dirname(currentUri.fsPath), ".austin-vscode");
 
             const terminal = vscode.window.createTerminal({name: "Austin", hideFromUser: false});
-            const commandToRun = getAustinCommand(outputFile, currentUri.fsPath);
+            const command = getAustinCommand(outputFile, currentUri.fsPath);
+            const commandToRun = command.cmd + command.args.join(" ");
             terminal.show();
             terminal.sendText(commandToRun + "; exit $LastExitCode");
             this.output.appendLine("Running austin");
