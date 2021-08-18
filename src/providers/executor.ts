@@ -3,19 +3,15 @@ import * as vscode from 'vscode';
 import { AustinCommandArguments } from "../utils/commandFactory";
 
 import { ChildProcess, spawn } from 'child_process';
-
-export type ExecutionResult<T extends string | Buffer> = {
-    stdout: T;
-    stderr?: T;
-};
+import { AustinStats } from '../model';
 
 export class AustinCommandExecutor implements vscode.Pseudoterminal  {
     private austinProcess: ChildProcess | undefined;
     stderr: string | undefined;
     stdout: string | undefined;
-    result: number | undefined;
+    result: number = 0;
 
-    constructor(private command: AustinCommandArguments, private output: vscode.OutputChannel){}
+    constructor(private command: AustinCommandArguments, private output: vscode.OutputChannel, private stats: AustinStats, private outputFile: string){}
 
 	private writeEmitter = new vscode.EventEmitter<string>();
 	onDidWrite: vscode.Event<string> = this.writeEmitter.event;
@@ -24,10 +20,19 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal  {
 
 	private fileWatcher: vscode.FileSystemWatcher | undefined;
 
+    private showStats() {
+        this.stats.readFromFile(this.outputFile);
+    }
+
 	open(initialDimensions: vscode.TerminalDimensions | undefined): void {
         this.writeEmitter.fire('Starting Profiler.\r\n');
+        this.writeEmitter.fire(this.command.cmd);
+        this.writeEmitter.fire(this.command.args.join(" "));
 		this.austinProcess = spawn(this.command.cmd, this.command.args, {shell: true}); // NOSONAR
         if (this.austinProcess){
+            this.austinProcess.on('error', (err) => {
+                this.writeEmitter.fire(err.message);
+            });
             this.austinProcess.stdout!.on('data', (data) => {
                 this.output.append(data);
             });
@@ -37,9 +42,13 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal  {
             });
             
             this.austinProcess.on('close', (code) => {
-                this.writeEmitter.fire(`austin process exited with code ${code}\r\n`);
-                this.result = code;
-                this.writeEmitter.fire('Profiling complete.\r\n');
+                if (code !== 0){
+                    this.writeEmitter.fire(`austin process exited with code ${code}\r\n`);
+                    this.result = code;
+                } else {
+                    this.writeEmitter.fire('Profiling complete.\r\n');
+                    this.showStats();
+                }
                 this.closeEmitter.fire(code);
             });
         }

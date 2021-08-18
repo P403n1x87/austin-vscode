@@ -1,20 +1,21 @@
 import * as vscode from 'vscode';
+import { AustinRuntimeSettings } from '../settings';
+import { AustinMode, AustinSettings } from '../types';
 
 export interface AustinCommandArguments {
     cmd: string
     args: string[]
 }
 
+
 export function getAustinCommand(outputFile: string, pythonFile: string, pythonArgs: string[] | undefined = undefined, austinArgs: string[] | undefined = undefined) : AustinCommandArguments {
     const pythonExtension = vscode.extensions.getExtension("ms-python.python");
+    const settings = AustinRuntimeSettings.get().settings;
     if (pythonExtension !== undefined) {
         pythonExtension.exports.settings.getExecutionDetails();
         const interpreter: string = pythonExtension.exports.settings.getExecutionDetails().execCommand[0];
-        const config = vscode.workspace.getConfiguration('austin');
-        const austinPath = config.get("path") || "austin";
-        const sleepless = config.get("mode") === "CPU time" ? "-s" : "";
-        const austinInterval: number = parseInt(config.get("interval") || "100");
-        let _args: string[] = [`-i ${austinInterval}`,`-o ${outputFile}`, `${sleepless}`];
+        let sleepless = settings.mode === AustinMode.CpuTime ? "-s" : "";
+        let _args: string[] = [`-i ${settings.interval}`, `-o ${outputFile}`, `${sleepless}`];
         if (austinArgs)
             {_args.concat(austinArgs);}
         _args.push(interpreter);
@@ -23,7 +24,7 @@ export function getAustinCommand(outputFile: string, pythonFile: string, pythonA
             {_args.concat(pythonArgs);}
 
         return {
-            cmd: `${austinPath}`,
+            cmd: `${settings.path}`,
             args: _args
         };
     } else {
