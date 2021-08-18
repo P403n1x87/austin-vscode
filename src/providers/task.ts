@@ -9,9 +9,9 @@ import { AustinMode } from "../types";
 export class AustinProfileTaskProvider implements vscode.TaskProvider {
   private austinPromise: Thenable<vscode.Task[]> | undefined = undefined;
   private workspaceRoot: string | undefined;
+  private output: vscode.OutputChannel = vscode.window.createOutputChannel("Austin");
 
   constructor(
-    private output: vscode.OutputChannel,
     private stats: AustinStats
   ) {
     this.workspaceRoot = vscode.workspace.workspaceFolders
