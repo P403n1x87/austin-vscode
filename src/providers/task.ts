@@ -3,6 +3,8 @@ import * as path from "path";
 import { getAustinCommand } from "../utils/commandFactory";
 import { AustinCommandExecutor } from "./executor";
 import { AustinStats } from "../model";
+import { isPythonExtensionAvailable } from "../utils/pythonExtension";
+import { AustinMode } from "../types";
 
 export class AustinProfileTaskProvider implements vscode.TaskProvider {
   private austinPromise: Thenable<vscode.Task[]> | undefined = undefined;
@@ -36,11 +38,17 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
     const outputFile = this.workspaceRoot
       ? path.join(this.workspaceRoot, profileName)
       : profileName;
+    if (!isPythonExtensionAvailable()){
+      this.output.appendLine("Python extension not available.");
+      return;
+    }
     const command = getAustinCommand(
       outputFile,
       resolvedPath,
       definition.args,
-      definition.austinArgs
+      definition.austinArgs,
+      definition.interval,
+      definition.mode
     );
     return new vscode.Task(
       definition,
@@ -69,6 +77,16 @@ interface AustinProfileTaskDefinition extends vscode.TaskDefinition {
    * Optional arguments to the python file
    */
   args?: string[];
+
+  /** 
+   * Polling interval
+   */
+  interval?: number;
+
+  /** 
+   * Mode, either "Wall time" or "CPU time"
+   */
+  mode?: AustinMode;
 
   /**
    * Optional arguments to austin

@@ -3,6 +3,7 @@ import { dirname, join } from 'path';
 import { clearDecorations, setLinesHeat } from './view';
 import { absolutePath, AustinStats } from './model';
 import { getAustinCommand } from './utils/commandFactory';
+import { isPythonExtensionAvailable } from './utils/pythonExtension';
 
 
 function delay(ms: number) {
@@ -15,10 +16,11 @@ export class AustinController {
 
     public async profileScript() {
         const currentUri = vscode.window.activeTextEditor?.document.uri;
-
+        if (!isPythonExtensionAvailable()) {
+            throw Error("Python extension not available");
+        }
         if (currentUri?.scheme === "file") {
             const outputFile = join(dirname(currentUri.fsPath), ".austin-vscode");
-
             const terminal = vscode.window.createTerminal({name: "Austin", hideFromUser: false});
             const command = getAustinCommand(outputFile, currentUri.fsPath);
             const commandToRun = command.cmd + command.args.join(" ");
@@ -46,8 +48,6 @@ export class AustinController {
             vscode.window.showErrorMessage("Please save the file to disk first!");
         }
     }
-
-
 
     public openSampleFile() {
         vscode.window.showOpenDialog({
