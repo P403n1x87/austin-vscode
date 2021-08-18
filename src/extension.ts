@@ -16,7 +16,6 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	const output :vscode.OutputChannel = vscode.window.createOutputChannel("Austin");
-	const workspaceRoot = vscode.workspace.workspaceFolders ? vscode.workspace.workspaceFolders[0].uri.fsPath : undefined;
 	
 	const stats = new AustinStats();
 	const controller = new AustinController(stats, output);
@@ -24,7 +23,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const flameGraphViewProvider = new FlameGraphViewProvider(context.extensionUri);
 	const topProvider = new TopDataProvider();
 	const callStackProvider = new CallStackDataProvider();
-	const austinProfileProvider = new AustinProfileTaskProvider(output, stats, workspaceRoot);
+	const austinProfileProvider = new AustinProfileTaskProvider(output, stats);
 
 	stats.registerBeforeCallback(() => flameGraphViewProvider.showLoading());
 	stats.registerAfterCallback((stats) => flameGraphViewProvider.refresh(stats));
