@@ -140,7 +140,6 @@
 					},
           "profileName": {
             "type": "string",
-            "default": ".austin-vscode",
             "description": "Name of the generated profile"
           }
 				}
