@@ -118,6 +118,28 @@
         "mac": "shift+f5",
         "when": "editorLangId == python"
       }
+    ],
+    "taskDefinitions": [
+			{
+				"type": "austin",
+				"required": [
+					"file"
+				],
+				"properties": {
+					"file": {
+						"type": "string",
+						"description": "The python file path to profile."
+					},
+					"args": {
+						"type": "array",
+						"description": "Optional list of arguments to the task"
+					},
+          "austinArgs": {
+						"type": "array",
+						"description": "Optional list of austin command-line options"
+					}
+				}
+			}
     ]
   },
   "scripts": {

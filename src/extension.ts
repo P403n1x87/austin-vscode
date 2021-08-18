@@ -5,6 +5,7 @@ import { AustinController } from './controller';
 import { AustinStats } from './model';
 import { TopDataProvider } from './providers/top';
 import { CallStackDataProvider } from './providers/callstack';
+import { AustinProfileTaskProvider } from './providers/task';
 
 
 export function activate(context: vscode.ExtensionContext) {
@@ -21,6 +22,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const flameGraphViewProvider = new FlameGraphViewProvider(context.extensionUri);
 	const topProvider = new TopDataProvider();
 	const callStackProvider = new CallStackDataProvider();
+	const austinProfileProvider = new AustinProfileTaskProvider(output);
 
 	stats.registerBeforeCallback(() => flameGraphViewProvider.showLoading());
 	stats.registerAfterCallback((stats) => flameGraphViewProvider.refresh(stats));
@@ -33,6 +35,10 @@ export function activate(context: vscode.ExtensionContext) {
 			flameGraphViewProvider,
 		)
 	);
+
+	context.subscriptions.push(
+		vscode.tasks.registerTaskProvider("austin", austinProfileProvider)
+	)
 
 	context.subscriptions.push(
 		vscode.window.registerTreeDataProvider(TopDataProvider.viewType, topProvider)
