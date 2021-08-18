@@ -87,7 +87,7 @@ export function activate(context: vscode.ExtensionContext) {
 			}).then((value) => {
 				if (value) {
 					const newInterval = parseInt(value);
-					AustinRuntimeSettings.updateInterval(newInterval);
+					AustinRuntimeSettings.setInterval(newInterval);
 					austinIntervalStatusBarItem.text = formatInterval(newInterval);
 				}
 			});
@@ -121,7 +121,6 @@ export function activate(context: vscode.ExtensionContext) {
 		austinIntervalStatusBarItem.show();
 	}
 
-
 	vscode.window.onDidChangeActiveTextEditor((event) => {
 		if (event?.document.languageId === "python") {
 			austinModeStatusBarItem.show();
@@ -133,6 +132,17 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
+	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+		if (e.affectsConfiguration('austin.path')){
+			AustinRuntimeSettings.resetPath();
+		}
+		if (e.affectsConfiguration('austin.mode')){
+			AustinRuntimeSettings.resetMode();
+		}
+		if (e.affectsConfiguration('austin.interval')){
+			AustinRuntimeSettings.resetInterval();
+		}
+	}));
 }
 
 

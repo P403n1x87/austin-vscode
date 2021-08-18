@@ -20,8 +20,9 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
   public resolveTask(_task: vscode.Task): vscode.Task | undefined {
     // resolveTask requires that the same definition object be used.
     const definition: AustinProfileTaskDefinition = <any>_task.definition;
+    const profileName = definition.profileName ? definition.profileName : definition.file.replace(".py", "") + ".austin";
     const resolvedPath = this.workspaceRoot ? path.join(this.workspaceRoot, definition.file) : definition.file;
-    const outputFile = ".austin-vscode" ; // TODO : Choose a randomish name so you can profile lots of files at once
+    const outputFile = this.workspaceRoot ? path.join(this.workspaceRoot, profileName) : profileName;
     const command = getAustinCommand(outputFile, resolvedPath, definition.args, definition.austinArgs);
     return new vscode.Task(
         definition,
@@ -52,5 +53,10 @@ interface AustinProfileTaskDefinition extends vscode.TaskDefinition {
      * Optional arguments to austin
      */
     austinArgs?: string[];
+
+    /**
+     * Name of the generated profile 
+     */
+    profileName?: string;
 }
 

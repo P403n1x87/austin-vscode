@@ -26,8 +26,6 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal  {
 
 	open(initialDimensions: vscode.TerminalDimensions | undefined): void {
         this.writeEmitter.fire('Starting Profiler.\r\n');
-        this.writeEmitter.fire(this.command.cmd);
-        this.writeEmitter.fire(this.command.args.join(" "));
 		this.austinProcess = spawn(this.command.cmd, this.command.args, {shell: true}); // NOSONAR
         if (this.austinProcess){
             this.austinProcess.on('error', (err) => {
@@ -45,11 +43,14 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal  {
                 if (code !== 0){
                     this.writeEmitter.fire(`austin process exited with code ${code}\r\n`);
                     this.result = code;
+                    this.closeEmitter.fire(code);
+
                 } else {
+                    this.writeEmitter.fire(`Created profile data at ${this.outputFile}.\r\n`);
                     this.writeEmitter.fire('Profiling complete.\r\n');
+                    this.closeEmitter.fire(code);
                     this.showStats();
                 }
-                this.closeEmitter.fire(code);
             });
         }
 	}

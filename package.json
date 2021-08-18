@@ -137,7 +137,12 @@
           "austinArgs": {
 						"type": "array",
 						"description": "Optional list of austin command-line options"
-					}
+					},
+          "profileName": {
+            "type": "string",
+            "default": ".austin-vscode",
+            "description": "Name of the generated profile"
+          }
 				}
 			}
     ]
