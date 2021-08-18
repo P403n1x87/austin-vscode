@@ -120,30 +120,30 @@
       }
     ],
     "taskDefinitions": [
-			{
-				"type": "austin",
-				"required": [
-					"file"
-				],
-				"properties": {
-					"file": {
-						"type": "string",
-						"description": "The python file path to profile."
-					},
-					"args": {
-						"type": "array",
-						"description": "Optional list of arguments to the task"
-					},
+      {
+        "type": "austin",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "The python file path to profile."
+          },
+          "args": {
+            "type": "array",
+            "description": "Optional list of arguments to the task"
+          },
           "austinArgs": {
-						"type": "array",
-						"description": "Optional list of austin command-line options"
-					},
+            "type": "array",
+            "description": "Optional list of austin command-line options"
+          },
           "profileName": {
             "type": "string",
             "description": "Name of the generated profile"
           }
-				}
-			}
+        }
+      }
     ]
   },
   "scripts": {
