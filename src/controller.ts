@@ -11,7 +11,7 @@ function delay(ms: number) {
 
 export class AustinController {
 
-    public constructor(private stats: AustinStats) { }
+    public constructor(private stats: AustinStats, private output: vscode.OutputChannel) { }
 
     public async profileScript() {
         const pythonExtension = vscode.extensions.getExtension("ms-python.python");
@@ -24,20 +24,23 @@ export class AustinController {
             if (currentUri?.scheme === "file") {
                 const outputFile = join(dirname(currentUri.fsPath), ".austin-vscode");
 
-                const terminal = vscode.window.createTerminal("Austin");
+                const terminal = vscode.window.createTerminal({name: "Austin", hideFromUser: false});
                 const config = vscode.workspace.getConfiguration('austin');
                 const austinPath = config.get("path") || "austin";
                 const sleepless = config.get("mode") === "CPU time" ? "-s" : "";
                 const austinInterval: number = parseInt(config.get("interval") || "100");
-
+                const commandToRun: string = `${austinPath} -i ${austinInterval} -o ${outputFile} ${sleepless} ${interpreter} ${currentUri.fsPath}`;
+                
                 terminal.show();
-                terminal.sendText(`${austinPath} -i ${austinInterval} -o ${outputFile} ${sleepless} ${interpreter} ${currentUri.fsPath}` + "; exit $LastExitCode");
-
+                terminal.sendText(commandToRun + "; exit $LastExitCode");
+                this.output.appendLine("Running austin");
+                this.output.appendLine(commandToRun);
                 while (terminal.exitStatus === undefined) {
                     await delay(1);
                 }
 
                 const exitCode = terminal.exitStatus.code;
+                this.output.appendLine(`Command returned ${terminal.exitStatus.code}`);
                 if (exitCode !== 0) {
                     vscode.window.showErrorMessage("Austin terminated with code " + exitCode?.toString());
                 }
