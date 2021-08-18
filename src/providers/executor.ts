@@ -26,18 +26,7 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal  {
 
 	open(initialDimensions: vscode.TerminalDimensions | undefined): void {
         this.writeEmitter.fire('Starting Profiler.\r\n');
-        const callback = (e: any, stdout: any, stderr: any) => {
-            if (e && e !== null) {
-                this.writeEmitter.fire(`Profiling failed (${e}).\r\n`);
-            } else {
-                // Make sure stderr is undefined if we actually had none. This is checked
-                // elsewhere because that's how exec behaves.
-                this.stderr = stderr && stderr.length > 0 ? stderr : undefined;
-                this.stdout = stdout;
-                this.writeEmitter.fire(`Profiling completed (${stdout}).\r\n`);
-            }
-        };
-		this.austinProcess = spawn(this.command.cmd, this.command.args); // NOSONAR
+		this.austinProcess = spawn(this.command.cmd, this.command.args, {shell: true}); // NOSONAR
         if (this.austinProcess){
             this.austinProcess.stdout!.on('data', (data) => {
                 this.output.append(data);
@@ -48,10 +37,11 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal  {
             });
             
             this.austinProcess.on('close', (code) => {
-                console.log(`austin process exited with code ${code}`);
+                this.writeEmitter.fire(`austin process exited with code ${code}\r\n`);
                 this.result = code;
+                this.writeEmitter.fire('Profiling complete.\r\n');
+                this.closeEmitter.fire(code);
             });
-            this.writeEmitter.fire('Profiling complete.\r\n');
         }
 	}
 
