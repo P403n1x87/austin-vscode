@@ -13,7 +13,7 @@ function delay(ms: number) {
 export class AustinController {
     private output: vscode.OutputChannel = vscode.window.createOutputChannel("Austin");
 
-    public constructor(private stats: AustinStats, ) { }
+    public constructor(private stats: AustinStats) { }
 
     public async profileScript() {
         const currentUri = vscode.window.activeTextEditor?.document.uri;
