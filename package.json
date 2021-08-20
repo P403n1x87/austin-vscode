@@ -118,6 +118,48 @@
         "mac": "shift+f5",
         "when": "editorLangId == python"
       }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "austin",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "The python file path to profile."
+          },
+          "args": {
+            "type": "array",
+            "description": "Optional list of arguments to the task"
+          },
+          "mode": {
+            "description": "Profiling mode",
+            "type": "string",
+            "enum": [
+              "Wall time",
+              "CPU time"
+            ],
+            "enumDescriptions": [
+              "Estimate wall-clock time",
+              "Estimate CPU time"
+            ]
+          },
+          "interval": {
+            "description": "The sampling interval, in microseconds",
+            "type": "number"
+          },
+          "austinArgs": {
+            "type": "array",
+            "description": "Optional list of austin command-line options"
+          },
+          "profileName": {
+            "type": "string",
+            "description": "Name of the generated profile"
+          }
+        }
+      }
     ]
   },
   "scripts": {

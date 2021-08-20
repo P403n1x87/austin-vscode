@@ -5,10 +5,12 @@ import { AustinController } from './controller';
 import { AustinStats } from './model';
 import { TopDataProvider } from './providers/top';
 import { CallStackDataProvider } from './providers/callstack';
+import { AustinProfileTaskProvider } from './providers/task';
+import { AustinRuntimeSettings } from './settings';
+import { AustinMode } from './types';
 
 
 export function activate(context: vscode.ExtensionContext) {
-
 	vscode.workspace.onDidChangeTextDocument((changeEvent) => {
 		clearDecorations();
 	});
@@ -19,6 +21,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const flameGraphViewProvider = new FlameGraphViewProvider(context.extensionUri);
 	const topProvider = new TopDataProvider();
 	const callStackProvider = new CallStackDataProvider();
+	const austinProfileProvider = new AustinProfileTaskProvider(stats);
 
 	stats.registerBeforeCallback(() => flameGraphViewProvider.showLoading());
 	stats.registerAfterCallback((stats) => flameGraphViewProvider.refresh(stats));
@@ -30,6 +33,10 @@ export function activate(context: vscode.ExtensionContext) {
 			FlameGraphViewProvider.viewType,
 			flameGraphViewProvider,
 		)
+	);
+
+	context.subscriptions.push(
+		vscode.tasks.registerTaskProvider("austin", austinProfileProvider)
 	);
 
 	context.subscriptions.push(
@@ -59,19 +66,17 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	// ---- Interval selector ----
-	const config = vscode.workspace.getConfiguration('austin');
-	const austinInterval: number = parseInt(config.get("interval") || "100");
 	const austinIntervalStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 
 	austinIntervalStatusBarItem.command = "austin-vscode.interval";
-	austinIntervalStatusBarItem.text = formatInterval(austinInterval);
+	austinIntervalStatusBarItem.text = formatInterval(AustinRuntimeSettings.getInterval());
 	austinIntervalStatusBarItem.tooltip = "Austin sampling interval";
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand(austinIntervalStatusBarItem.command, () => {
 			// Show interval dialog
 			vscode.window.showInputBox({
-				"value": config.get("interval"),
+				"value": AustinRuntimeSettings.getInterval().toString(),
 				"prompt": "Enter new Austin sampling interval",
 				"validateInput": (value) => {
 					if (isNaN(parseInt(value)) || !/^\d+$/.test(value)) { return "The interval must be an integer."; }
@@ -79,7 +84,7 @@ export function activate(context: vscode.ExtensionContext) {
 			}).then((value) => {
 				if (value) {
 					const newInterval = parseInt(value);
-					config.update("interval", newInterval);
+					AustinRuntimeSettings.setInterval(newInterval);
 					austinIntervalStatusBarItem.text = formatInterval(newInterval);
 				}
 			});
@@ -88,11 +93,10 @@ export function activate(context: vscode.ExtensionContext) {
 
 
 	// ---- Mode selector ----
-	const austinMode: string = config.get("mode") || "Wall time";
 	const austinModeStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 
 	austinModeStatusBarItem.command = "austin-vscode.mode";
-	austinModeStatusBarItem.text = `$(clock) ${austinMode}`;
+	austinModeStatusBarItem.text = `$(clock) ${AustinRuntimeSettings.getMode()}`;
 	austinModeStatusBarItem.tooltip = "Austin sampling mode";
 
 	context.subscriptions.push(
@@ -102,7 +106,7 @@ export function activate(context: vscode.ExtensionContext) {
 				["Wall time", "CPU time"], { "canPickMany": false }
 			).then((value) => {
 				if (value) {
-					config.update("mode", value);
+					AustinRuntimeSettings.setMode(value as AustinMode);
 					austinModeStatusBarItem.text = `$(clock) ${value}`;
 				}
 			});
@@ -113,7 +117,6 @@ export function activate(context: vscode.ExtensionContext) {
 		austinModeStatusBarItem.show();
 		austinIntervalStatusBarItem.show();
 	}
-
 
 	vscode.window.onDidChangeActiveTextEditor((event) => {
 		if (event?.document.languageId === "python") {
@@ -126,6 +129,17 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
+	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+		if (e.affectsConfiguration('austin.path')){
+			AustinRuntimeSettings.resetPath();
+		}
+		if (e.affectsConfiguration('austin.mode')){
+			AustinRuntimeSettings.resetMode();
+		}
+		if (e.affectsConfiguration('austin.interval')){
+			AustinRuntimeSettings.resetInterval();
+		}
+	}));
 }
 
 
