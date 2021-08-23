@@ -126,7 +126,7 @@ function flameGraph(data) {
         .datum(data)
         .call(flameGraph);
 
-    window.addEventListener('resize', () => { flameGraph.setWidth(document.getElementById('chart').scrollWidth); });
+    window.addEventListener('resize', () => { flameGraph.setWidth(document.getElementById('chart').clientWidth); });
 
     return flameGraph;
 }

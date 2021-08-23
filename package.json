@@ -3,7 +3,7 @@
   "displayName": "Austin VS Code",
   "publisher": "p403n1x87",
   "description": "Austin extension for VS Code",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "engines": {
     "vscode": "^1.57.0"
   },
@@ -69,7 +69,7 @@
         {
           "id": "austin-stats",
           "title": "Austin Stats",
-          "icon": "media/austin.svg"
+          "icon": "media/austin-activitybar.svg"
         }
       ]
     },

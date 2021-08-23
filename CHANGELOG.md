@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.7.0]
+
+- Added support for tasks to run Python scripts with Austin (contributed by Anthony Shaw)
+- Flame graph panel visual improvements
+
 ## [0.6.1]
 
 - Improved tooltip
