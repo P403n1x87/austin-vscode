@@ -1,6 +1,6 @@
 # Austin VS Code Extension
 
-![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/p403n1x87.austin-vscode.svg?style=flat-square&color=blue&logo=visual-studio)
+[![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/p403n1x87.austin-vscode.svg?style=flat-square&color=blue&logo=visual-studio)](https://marketplace.visualstudio.com/items?itemName=p403n1x87.austin-vscode)
 
 Profile and analyse your Python application inside VS Code using Austin.
 
@@ -20,6 +20,45 @@ Austin binary in the settings.
 
 
 ## Usage
+
+There are two ways of executing Austin from VS Code. Either using a configured task, or a one-off execution.
+
+### Profiling with tasks
+
+The Austin extension provides a `"austin"` task type to VS Code. The VS Code [Tasks](https://code.visualstudio.com/docs/editor/tasks#_custom-tasks) system is the best way to define jobs to run against your code, like profiling. Create a `tasks.json` inside the `.vscode` folder in the root of your workspace:
+
+```json
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "austin",
+            "file": "main.py",
+            "label": "Profile main.py",
+        }
+    ]
+}
+```
+
+You can also specify a list of arguments to send to your Python script. This is equivalent of running `python main.py --verbose`:
+
+```json
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "austin",
+            "file": "main.py",
+            "args": ["--verbose"],
+            "label": "Profile main.py",
+        }
+    ]
+}
+```
+
+To Run the task, execute `Tasks: Run Task` from the Command Palette and select the task you specified in `tasks.json`.
+
+### Profiling a standalone script
 
 To profile a Python script, open it up in VS Code, open the command palette and
 search for `Profile with Austin`, or press  <kbd>Shift</kbd> + <kbd>F5</kbd>. If
@@ -45,7 +84,6 @@ activity bar to reveal them.
 <!-- To toggle line numbers, press <kbd>L</kbd>. This could be useful when the same
 Python module has multiple methods with the same names (e.g. `__init__`), since
 the function names collected by Austin are not fully qualified. -->
-
 
 ## Configuration
 
