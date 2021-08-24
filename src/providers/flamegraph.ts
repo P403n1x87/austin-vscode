@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { setLinesHeat, clearDecorations } from '../view';
-import { absolutePath, AustinStats, } from '../model';
+import { setLinesHeat } from '../view';
+import { AustinStats } from '../model';
 
 
 function delay(ms: number) {

@@ -1,5 +1,6 @@
-//@ts-check
+// @ts-check
 
+// @ts-ignore
 const vscode = acquireVsCodeApi();
 
 
@@ -59,10 +60,10 @@ function isEmpty(obj) {
 }
 
 function esc(text) {
-    return text.replace("<", "&lt;").replace(">", "&gt;")
+    return text.replace("<", "&lt;").replace(">", "&gt;");
 }
 
-function time_label(d, parent) {
+function timeLabel(d, parent) {
     return (
         esc(d.data.name) + " 🕘 " + d.data.value.toString() +
         " μs (" + (d.data.value / parent.data.value * 100).toFixed(2) + "%)" +
@@ -76,6 +77,7 @@ function flameGraph(data) {
         return;
     }
 
+    // @ts-ignore
     var flameGraph = flamegraph()
         .width(document.getElementById('chart').clientWidth)
         .transitionDuration(250)
@@ -84,7 +86,7 @@ function flameGraph(data) {
         .inverted(true)
         .cellHeight(24)
         .label(function (d) {
-            var c = ""
+            var c = "";
             for (var e in d) { c += " " + e; }
             var parent = d;
             try {
@@ -93,9 +95,9 @@ function flameGraph(data) {
                 }
             }
             catch (err) {
-                // parent.parent is undefied
+                // parent.parent is undefined
             }
-            return time_label(d, parent);
+            return timeLabel(d, parent);
         });
 
     flameGraph.setWidth = function (width) {
