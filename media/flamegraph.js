@@ -77,7 +77,7 @@ function flameGraph(data) {
     }
 
     var flameGraph = flamegraph()
-        .width(document.getElementById('chart').scrollWidth)
+        .width(document.getElementById('chart').clientWidth)
         .transitionDuration(250)
         .minFrameSize(0)
         .transitionEase(d3.easeCubic)
@@ -128,11 +128,36 @@ function flameGraph(data) {
 
     window.addEventListener('resize', () => { flameGraph.setWidth(document.getElementById('chart').clientWidth); });
 
+    flameGraph.setWidth(document.getElementById('chart').clientWidth);
+
     return flameGraph;
 }
 
 
-const graph = flameGraph(vscode.getState());
+function setMetadata(meta) {
+    if (!meta || isEmpty(meta)) {
+        return;
+    }
+
+    let modeSpan = document.getElementById("mode");
+    let mode;
+    switch (meta.mode) {
+        case "cpu":
+            mode = "CPU Time Profile";
+            break;
+        case "wall":
+            mode = "Wall Time Profile";
+            break;
+        default:
+            mode = "<unsupported profile mode>";
+    }
+    modeSpan.innerHTML = mode;
+}
+
+
+const state = vscode.getState();
+setMetadata(state.meta);
+var graph = flameGraph(state.hierarchy);
 
 
 window.addEventListener('message', event => {
@@ -140,26 +165,17 @@ window.addEventListener('message', event => {
         graph.search(event.data.search);
     }
     else if (event.data.meta) {
-        let modeSpan = document.getElementById("mode");
-        let mode;
-        switch (event.data.meta.mode) {
-            case "cpu":
-                mode = "CPU Time Profile";
-                break;
-            case "wall":
-                mode = "Wall Time Profile";
-                break;
-            default:
-                mode = "<unsupported profile mode>";
-        }
-        modeSpan.innerHTML = mode;
+        setMetadata(event.data.meta);
+        flameGraph(event.data.hierarchy);
+
+        vscode.setState(event.data);
     }
     else if (event.data === "reset") {
         graph.resetZoom();
         graph.clear();
     }
     else {
-        flameGraph(event.data);
+        graph = flameGraph(event.data);
         vscode.setState(event.data);
     }
 });

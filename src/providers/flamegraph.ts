@@ -91,8 +91,10 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         if (this._view) {
             this._setFlameGraphHtml();
             this._view.show?.(true);
-            this._view.webview.postMessage(stats.hierarchy);
-            this._view.webview.postMessage({ "meta": { "mode": stats.metadata.get("mode") } });
+            this._view.webview.postMessage({
+                "meta": { "mode": stats.metadata.get("mode") },
+                "hierarchy": stats.hierarchy,
+            });
             // this._source = austinFile;
         }
         const currentUri = vscode.window.activeTextEditor?.document.uri;
