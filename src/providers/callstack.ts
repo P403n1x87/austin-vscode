@@ -2,11 +2,17 @@ import * as vscode from 'vscode';
 import { AustinStats, TopStats } from '../model';
 
 function _normalizeScope(scope: string) {
-    switch (scope?.charAt(0)) {
+    let head = scope.match(/^([PT])([x0-9A-Fa-f]+)$/);
+    if (head === null) {
+        return scope;
+    }
+
+    let [, type, id] = head;
+    switch (type) {
         case 'P':
-            return `Process ${scope.slice(1)}`;
+            return `Process ${id}`;
         case 'T':
-            return `Thread ${scope.slice(1)}`;
+            return `Thread ${id}`;
         default:
             return scope;
     }
