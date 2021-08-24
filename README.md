@@ -21,11 +21,15 @@ Austin binary in the settings.
 
 ## Usage
 
-There are two ways of executing Austin from VS Code. Either using a configured task, or a one-off execution.
+There are two ways of executing Austin from VS Code. Either using a configured
+ task, or a one-off execution.
 
 ### Profiling with tasks
 
-The Austin extension provides a `"austin"` task type to VS Code. The VS Code [Tasks](https://code.visualstudio.com/docs/editor/tasks#_custom-tasks) system is the best way to define jobs to run against your code, like profiling. Create a `tasks.json` inside the `.vscode` folder in the root of your workspace:
+The Austin extension provides a `"austin"` task type to VS Code. The VS Code
+[Tasks](https://code.visualstudio.com/docs/editor/tasks#_custom-tasks)
+system is the best way to define jobs to run against your code, like profiling.
+Create a `tasks.json` inside the `.vscode` folder in the root of your workspace:
 
 ```json
 {
@@ -40,7 +44,8 @@ The Austin extension provides a `"austin"` task type to VS Code. The VS Code [Ta
 }
 ```
 
-You can also specify a list of arguments to send to your Python script. This is equivalent of running `python main.py --verbose`:
+You can also specify a list of arguments to send to your Python script.
+This is equivalent of running `python main.py --verbose`:
 
 ```json
 {
@@ -56,7 +61,8 @@ You can also specify a list of arguments to send to your Python script. This is 
 }
 ```
 
-To Run the task, execute `Tasks: Run Task` from the Command Palette and select the task you specified in `tasks.json`.
+To Run the task, execute `Tasks: Run Task` from the Command Palette and select
+the task you specified in `tasks.json`.
 
 ### Profiling a standalone script
 
