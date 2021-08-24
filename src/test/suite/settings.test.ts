@@ -10,7 +10,7 @@ suite('Runtime SettingsTest Suite', () => {
 
 	test('Test Default Values are valid', () => {
 		assert.strictEqual(AustinRuntimeSettings.get().settings.path, DEFAULT_PATH);
-		assert.notStrictEqual(AustinRuntimeSettings.get().settings.interval, DEFAULT_INTERVAL);
-		assert.notStrictEqual(AustinRuntimeSettings.get().settings.mode, DEFAULT_MODE);
+		assert.strictEqual(AustinRuntimeSettings.get().settings.interval, DEFAULT_INTERVAL);
+		assert.strictEqual(AustinRuntimeSettings.get().settings.mode, DEFAULT_MODE);
 	});
 });
