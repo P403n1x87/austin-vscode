@@ -9,10 +9,10 @@ import { AustinMode } from "../types";
 export class AustinProfileTaskProvider implements vscode.TaskProvider {
   private austinPromise: Thenable<vscode.Task[]> | undefined = undefined;
   private workspaceRoot: string | undefined;
-  private output: vscode.OutputChannel = vscode.window.createOutputChannel("Austin");
+	private output = vscode.window.createOutputChannel("Austin");
 
   constructor(
-    private stats: AustinStats
+    private stats: AustinStats,
   ) {
     this.workspaceRoot = vscode.workspace.workspaceFolders
       ? vscode.workspace.workspaceFolders[0].uri.fsPath
@@ -26,9 +26,12 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
     return this.austinPromise;
   }
 
-  public resolveTask(_task: vscode.Task): vscode.Task | undefined {
+  public buildTaskFromUri(path: vscode.Uri){
+    return this.buildTask({file: path.fsPath, type: "austin"}, vscode.TaskScope.Global);
+  }
+
+  public buildTask(definition: AustinProfileTaskDefinition, scope: vscode.WorkspaceFolder | vscode.TaskScope) : vscode.Task {
     // resolveTask requires that the same definition object be used.
-    const definition: AustinProfileTaskDefinition = <any>_task.definition;
     const profileName = definition.profileName
       ? definition.profileName
       : definition.file.replace(".py", "") + ".austin";
@@ -38,10 +41,7 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
     const outputFile = this.workspaceRoot
       ? path.join(this.workspaceRoot, profileName)
       : profileName;
-    if (!isPythonExtensionAvailable()){
-      this.output.appendLine("Python extension not available.");
-      return;
-    }
+    
     const command = getAustinCommand(
       outputFile,
       resolvedPath,
@@ -52,7 +52,7 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
     );
     return new vscode.Task(
       definition,
-      _task.scope ?? vscode.TaskScope.Workspace,
+      scope,
       `profile ${resolvedPath}`,
       "austin",
       new vscode.CustomExecution(async (): Promise<vscode.Pseudoterminal> => {
@@ -64,6 +64,14 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
         );
       })
     );
+  }
+
+  public resolveTask(_task: vscode.Task): vscode.Task | undefined {
+    if (!isPythonExtensionAvailable()){
+      this.output.appendLine("Python extension not available.");
+      return;
+    }
+    return this.buildTask(<any>_task.definition, _task.scope ?? vscode.TaskScope.Workspace); 
   }
 }
 

@@ -66,6 +66,10 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
           this.showStats();
         }
       });
+    } else {
+      this.writeEmitter.fire(`Could not launch austin process ${this.command.cmd} with args ${this.command.args}`);
+      this.result = 35;
+      this.closeEmitter.fire(35);
     }
   }
 

@@ -1,19 +1,12 @@
 import * as vscode from 'vscode';
-import { dirname, join } from 'path';
 import { clearDecorations, setLinesHeat } from './view';
 import { absolutePath, AustinStats } from './model';
-import { getAustinCommand } from './utils/commandFactory';
 import { isPythonExtensionAvailable } from './utils/pythonExtension';
+import { AustinProfileTaskProvider } from './providers/task';
 
-
-function delay(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 export class AustinController {
-    private output: vscode.OutputChannel = vscode.window.createOutputChannel("Austin");
-
-    public constructor(private stats: AustinStats) { }
+    public constructor(private stats: AustinStats, private provider: AustinProfileTaskProvider) { }
 
     public async profileScript() {
         const currentUri = vscode.window.activeTextEditor?.document.uri;
@@ -21,29 +14,8 @@ export class AustinController {
             throw Error("Python extension not available");
         }
         if (currentUri?.scheme === "file") {
-            const outputFile = join(dirname(currentUri.fsPath), ".austin-vscode");
-            const terminal = vscode.window.createTerminal({name: "Austin", hideFromUser: false});
-            const command = getAustinCommand(outputFile, currentUri.fsPath);
-            const commandToRun = command.cmd + command.args.join(" ");
-            terminal.show();
-            terminal.sendText(commandToRun + "; exit $LastExitCode");
-            this.output.appendLine("Running austin");
-            this.output.appendLine(commandToRun);
-            while (terminal.exitStatus === undefined) {
-                await delay(1);
-            }
-
-            const exitCode = terminal.exitStatus.code;
-            this.output.appendLine(`Command returned ${terminal.exitStatus.code}`);
-            if (exitCode !== 0) {
-                vscode.window.showErrorMessage("Austin terminated with code " + exitCode?.toString());
-            }
-            else {
-                clearDecorations();
-                this.stats.readFromFile(outputFile);
-            }
-
-            return outputFile;
+            let task = this.provider.buildTaskFromUri(currentUri);
+            await vscode.tasks.executeTask(task);
         }
         else {
             vscode.window.showErrorMessage("Please save the file to disk first!");
