@@ -4,6 +4,7 @@ import { createInterface } from 'readline';
 import './stringExtension';
 import './mapExtension';
 import { isAbsolute } from 'path';
+import { Readable } from 'stream';
 
 
 export class TopStats {
@@ -230,12 +231,12 @@ export class AustinStats implements AustinStats {
         this._afterCbs.push(cb);
     }
 
-    public readFromFile(file: string) {
-        this.source = file;
+    public readFromStream(stream: Readable, fileName: string){
+        this.source = fileName;
         this.clear();
 
         const readInterface = createInterface({
-            input: createReadStream(file)
+            input: stream
         });
 
         this._beforeCbs.forEach(cb => cb());
@@ -246,6 +247,10 @@ export class AustinStats implements AustinStats {
             [...this.top.values()].forEach(v => { v.own /= this.overallTotal; v.total /= this.overallTotal; });
             this._afterCbs.forEach(cb => cb(this));
         });
+    }
+
+    public readFromFile(file: string) {
+        return this.readFromStream(createReadStream(file), file);
     }
 }
 

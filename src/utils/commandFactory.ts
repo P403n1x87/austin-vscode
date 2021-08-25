@@ -9,7 +9,6 @@ export interface AustinCommandArguments {
 
 
 export function getAustinCommand(
-        outputFile: string, 
         pythonFile: string, 
         pythonArgs: string[] | undefined = undefined, 
         austinArgs: string[] | undefined = undefined,
@@ -20,7 +19,7 @@ export function getAustinCommand(
     const _mode = mode ? mode : settings.mode;
     const _interval = interval ? interval : settings.interval;
     let sleepless = _mode === AustinMode.CpuTime ? "-s" : "";
-    let _args: string[] = [`-i ${_interval}`, `-o ${outputFile}`, `${sleepless}`];
+    let _args: string[] = [`-i ${_interval}`, `--pipe`, `${sleepless}`];
     if (austinArgs)
         {_args.concat(austinArgs);}
     _args.push(getConfiguredInterpreter());
