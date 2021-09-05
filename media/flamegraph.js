@@ -146,9 +146,13 @@ function setMetadata(meta) {
     switch (meta.mode) {
         case "cpu":
             mode = "CPU Time Profile";
+            document.body.style.backgroundColor = "rgba(127, 0, 0, .15)";
+            document.getElementById("header").style.backgroundColor = "rgba(192, 64, 64, .8)";
             break;
         case "wall":
             mode = "Wall Time Profile";
+            document.body.style.backgroundColor = "rgba(127, 127, 0, .15)";
+            document.getElementById("header").style.backgroundColor = "rgba(192, 192, 64, .8)";
             break;
         default:
             mode = "<unsupported profile mode>";
