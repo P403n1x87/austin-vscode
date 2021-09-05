@@ -1,5 +1,11 @@
 # Change Log
 
+## [0.8.0]
+
+- Flamegraph UI improvements
+- Added documentation for task support
+- Fixed the rendering of the sampled call stacks.
+
 ## [0.7.0]
 
 - Added support for tasks to run Python scripts with Austin (contributed by Anthony Shaw)
