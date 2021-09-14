@@ -162,8 +162,10 @@ function setMetadata(meta) {
 
 
 const state = vscode.getState();
-setMetadata(state.meta);
-var graph = flameGraph(state.hierarchy);
+if (state) {
+    setMetadata(state.meta);
+    var graph = flameGraph(state.hierarchy);
+}
 
 
 window.addEventListener('message', event => {
@@ -172,7 +174,7 @@ window.addEventListener('message', event => {
     }
     else if (event.data.meta) {
         setMetadata(event.data.meta);
-        flameGraph(event.data.hierarchy);
+        graph = flameGraph(event.data.hierarchy);
 
         vscode.setState(event.data);
     }

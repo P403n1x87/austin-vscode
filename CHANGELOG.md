@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.8.1]
+
+- Fix a flame graph UI issue.
+
 ## [0.8.0]
 
 - Flamegraph UI improvements
