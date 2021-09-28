@@ -10,7 +10,10 @@ export class AustinRuntimeSettings {
     private static instance: AustinRuntimeSettings;
     // Keep me private
     private constructor() {
-        const austinPath = AustinRuntimeSettings.config.get<string>("path", DEFAULT_PATH);
+        let austinPath = AustinRuntimeSettings.config.get<string>("path", DEFAULT_PATH);
+        if (austinPath === "") {
+            austinPath = DEFAULT_PATH;
+        }
         const austinInterval: number = AustinRuntimeSettings.config.get<number>("interval",  DEFAULT_INTERVAL);
         const austinMode: AustinMode = AustinRuntimeSettings.config.get("mode", DEFAULT_MODE);
 

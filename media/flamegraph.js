@@ -146,9 +146,13 @@ function setMetadata(meta) {
     switch (meta.mode) {
         case "cpu":
             mode = "CPU Time Profile";
+            document.body.style.backgroundColor = "rgba(127, 0, 0, .15)";
+            document.getElementById("header").style.backgroundColor = "rgba(192, 64, 64, .8)";
             break;
         case "wall":
             mode = "Wall Time Profile";
+            document.body.style.backgroundColor = "rgba(127, 127, 0, .15)";
+            document.getElementById("header").style.backgroundColor = "rgba(192, 192, 64, .8)";
             break;
         default:
             mode = "<unsupported profile mode>";
@@ -158,8 +162,10 @@ function setMetadata(meta) {
 
 
 const state = vscode.getState();
-setMetadata(state.meta);
-var graph = flameGraph(state.hierarchy);
+if (state) {
+    setMetadata(state.meta);
+    var graph = flameGraph(state.hierarchy);
+}
 
 
 window.addEventListener('message', event => {
@@ -168,7 +174,7 @@ window.addEventListener('message', event => {
     }
     else if (event.data.meta) {
         setMetadata(event.data.meta);
-        flameGraph(event.data.hierarchy);
+        graph = flameGraph(event.data.hierarchy);
 
         vscode.setState(event.data);
     }
