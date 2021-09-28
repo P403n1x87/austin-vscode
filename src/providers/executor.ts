@@ -5,18 +5,20 @@ import { AustinCommandArguments } from "../utils/commandFactory";
 import { ChildProcess, spawn } from "child_process";
 import { AustinStats } from "../model";
 import { clearDecorations, setLinesHeat } from "../view";
+import { Duplex } from "stream";
 
 export class AustinCommandExecutor implements vscode.Pseudoterminal {
   private austinProcess: ChildProcess | undefined;
   stderr: string | undefined;
   stdout: string | undefined;
   result: number = 0;
+  buffer: Duplex = new Duplex();
 
   constructor(
     private command: AustinCommandArguments,
     private output: vscode.OutputChannel,
     private stats: AustinStats,
-    private outputFile: string
+    private fileName: string
   ) {}
 
   private writeEmitter = new vscode.EventEmitter<string>();
@@ -28,8 +30,8 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
 
   private showStats() {
     clearDecorations();
-    this.stats.readFromFile(this.outputFile);
-    const lines = this.stats.lineMap.get(this.outputFile);
+    this.stats.readFromStream(this.buffer, this.fileName);
+    const lines = this.stats.lineMap.get(this.fileName);
     if (lines) {
       setLinesHeat(lines, this.stats.overallTotal);
     }
@@ -40,12 +42,13 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
     this.austinProcess = spawn(this.command.cmd, this.command.args, {
       shell: true,
     }); // NOSONAR
+    this.writeEmitter.fire(`Running austin with args ${this.command.args.join(' ')}.\r\n`);
     if (this.austinProcess) {
       this.austinProcess.on("error", (err) => {
         this.writeEmitter.fire(err.message);
       });
       this.austinProcess.stdout!.on("data", (data) => {
-        this.output.append(data);
+        this.buffer.write(data);
       });
 
       this.austinProcess.stderr!.on("data", (data) => {
@@ -53,19 +56,21 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
       });
 
       this.austinProcess.on("close", (code) => {
+        this.buffer.cork();
         if (code !== 0) {
           this.writeEmitter.fire(`austin process exited with code ${code}\r\n`);
           this.result = code;
           this.closeEmitter.fire(code);
         } else {
-          this.writeEmitter.fire(
-            `Created profile data at ${this.outputFile}.\r\n`
-          );
           this.writeEmitter.fire("Profiling complete.\r\n");
           this.closeEmitter.fire(code);
           this.showStats();
         }
       });
+    } else {
+      this.writeEmitter.fire(`Could not launch austin process ${this.command.cmd}.`);
+      this.result = 35;
+      this.closeEmitter.fire(35);
     }
   }
 

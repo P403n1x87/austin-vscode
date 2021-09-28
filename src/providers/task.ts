@@ -8,14 +8,14 @@ import { AustinMode } from "../types";
 
 export class AustinProfileTaskProvider implements vscode.TaskProvider {
   private austinPromise: Thenable<vscode.Task[]> | undefined = undefined;
-  private workspaceRoot: string | undefined;
-  private output: vscode.OutputChannel = vscode.window.createOutputChannel("Austin");
+  private workspaceRoot: vscode.Uri | undefined;
+	private output = vscode.window.createOutputChannel("Austin");
 
   constructor(
-    private stats: AustinStats
+    private stats: AustinStats,
   ) {
     this.workspaceRoot = vscode.workspace.workspaceFolders
-      ? vscode.workspace.workspaceFolders[0].uri.fsPath
+      ? vscode.workspace.workspaceFolders[0].uri
       : undefined;
   }
 
@@ -26,25 +26,20 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
     return this.austinPromise;
   }
 
-  public resolveTask(_task: vscode.Task): vscode.Task | undefined {
-    // resolveTask requires that the same definition object be used.
-    const definition: AustinProfileTaskDefinition = <any>_task.definition;
-    const profileName = definition.profileName
-      ? definition.profileName
-      : definition.file.replace(".py", "") + ".austin";
-    const resolvedPath = this.workspaceRoot
-      ? path.join(this.workspaceRoot, definition.file)
-      : definition.file;
-    const outputFile = this.workspaceRoot
-      ? path.join(this.workspaceRoot, profileName)
-      : profileName;
-    if (!isPythonExtensionAvailable()){
-      this.output.appendLine("Python extension not available.");
-      return;
-    }
+  public buildTaskFromUri(path: vscode.Uri){
+    return this.buildTask(
+      {file: path.fsPath, type: "austin"}, 
+      vscode.TaskScope.Workspace,
+      path);
+  }
+
+  public buildTask(
+    definition: AustinProfileTaskDefinition,
+    scope: vscode.WorkspaceFolder | vscode.TaskScope,
+    resolvedPath: vscode.Uri) : vscode.Task {
+
     const command = getAustinCommand(
-      outputFile,
-      resolvedPath,
+      resolvedPath.fsPath,
       definition.args,
       definition.austinArgs,
       definition.interval,
@@ -52,18 +47,35 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
     );
     return new vscode.Task(
       definition,
-      _task.scope ?? vscode.TaskScope.Workspace,
-      `profile ${resolvedPath}`,
+      scope,
+      `profile ${resolvedPath.fsPath}`,
       "austin",
       new vscode.CustomExecution(async (): Promise<vscode.Pseudoterminal> => {
         return new AustinCommandExecutor(
           command,
           this.output,
           this.stats,
-          outputFile
-        );
+          resolvedPath.fragment
+         );
       })
     );
+  }
+
+  public resolveTask(_task: vscode.Task): vscode.Task | undefined {
+    if (!isPythonExtensionAvailable()){
+      this.output.appendLine("Python extension not available.");
+      return;
+    }
+    const definition: AustinProfileTaskDefinition = <any>_task.definition;
+    // resolveTask requires that the same definition object be used.
+    const resolvedPath: vscode.Uri = this.workspaceRoot
+      ? vscode.Uri.joinPath(this.workspaceRoot, definition.file)
+      : vscode.Uri.parse(definition.file);
+
+    return this.buildTask(
+      definition,
+      _task.scope ?? vscode.TaskScope.Workspace,
+      resolvedPath);
   }
 }
 
@@ -92,9 +104,4 @@ interface AustinProfileTaskDefinition extends vscode.TaskDefinition {
    * Optional arguments to austin
    */
   austinArgs?: string[];
-
-  /**
-   * Name of the generated profile
-   */
-  profileName?: string;
 }
