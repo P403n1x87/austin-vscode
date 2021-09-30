@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.9.0]
+
+Improved the "Profile with Austin" command.
+
 ## [0.8.1]
 
 - Fix a flame graph UI issue.
