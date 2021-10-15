@@ -20,7 +20,7 @@
     "performance",
     "devtools"
   ],
-  "license": "GPL3",
+  "license": "MIT",
   "icon": "art/logo.png",
   "activationEvents": [
     "onCommand:austin-vscode.profile",
