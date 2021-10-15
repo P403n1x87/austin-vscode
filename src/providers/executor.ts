@@ -5,21 +5,20 @@ import { AustinCommandArguments } from "../utils/commandFactory";
 import { ChildProcess, spawn } from "child_process";
 import { AustinStats } from "../model";
 import { clearDecorations, setLinesHeat } from "../view";
-import { Duplex } from "stream";
 
 export class AustinCommandExecutor implements vscode.Pseudoterminal {
   private austinProcess: ChildProcess | undefined;
   stderr: string | undefined;
   stdout: string | undefined;
   result: number = 0;
-  buffer: Duplex = new Duplex();
+  buffer: string = "";
 
   constructor(
     private command: AustinCommandArguments,
     private output: vscode.OutputChannel,
     private stats: AustinStats,
     private fileName: string
-  ) {}
+  ) { }
 
   private writeEmitter = new vscode.EventEmitter<string>();
   onDidWrite: vscode.Event<string> = this.writeEmitter.event;
@@ -30,7 +29,7 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
 
   private showStats() {
     clearDecorations();
-    this.stats.readFromStream(this.buffer, this.fileName);
+    this.stats.readFromString(this.buffer, this.fileName);
     const lines = this.stats.lineMap.get(this.fileName);
     if (lines) {
       setLinesHeat(lines, this.stats.overallTotal);
@@ -48,7 +47,7 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
         this.writeEmitter.fire(err.message);
       });
       this.austinProcess.stdout!.on("data", (data) => {
-        this.buffer.write(data);
+        this.buffer += data.toString();
       });
 
       this.austinProcess.stderr!.on("data", (data) => {
@@ -56,7 +55,6 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
       });
 
       this.austinProcess.on("close", (code) => {
-        this.buffer.cork();
         if (code !== 0) {
           this.writeEmitter.fire(`austin process exited with code ${code}\r\n`);
           this.result = code;

@@ -9,7 +9,7 @@ import { AustinMode } from "../types";
 export class AustinProfileTaskProvider implements vscode.TaskProvider {
   private austinPromise: Thenable<vscode.Task[]> | undefined = undefined;
   private workspaceRoot: vscode.Uri | undefined;
-	private output = vscode.window.createOutputChannel("Austin");
+  private output = vscode.window.createOutputChannel("Austin");
 
   constructor(
     private stats: AustinStats,
@@ -26,9 +26,9 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
     return this.austinPromise;
   }
 
-  public buildTaskFromUri(path: vscode.Uri){
+  public buildTaskFromUri(path: vscode.Uri) {
     return this.buildTask(
-      {file: path.fsPath, type: "austin"}, 
+      { file: path.fsPath, type: "austin" },
       vscode.TaskScope.Workspace,
       path);
   }
@@ -36,7 +36,7 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
   public buildTask(
     definition: AustinProfileTaskDefinition,
     scope: vscode.WorkspaceFolder | vscode.TaskScope,
-    resolvedPath: vscode.Uri) : vscode.Task {
+    resolvedPath: vscode.Uri): vscode.Task {
 
     const command = getAustinCommand(
       resolvedPath.fsPath,
@@ -55,14 +55,14 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
           command,
           this.output,
           this.stats,
-          resolvedPath.fragment
-         );
+          resolvedPath.fsPath
+        );
       })
     );
   }
 
   public resolveTask(_task: vscode.Task): vscode.Task | undefined {
-    if (!isPythonExtensionAvailable()){
+    if (!isPythonExtensionAvailable()) {
       this.output.appendLine("Python extension not available.");
       return;
     }

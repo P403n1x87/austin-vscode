@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.9.1]
+
+- Fixed the issue with the `Profile with Austin` command that prevented the data
+from being shown in the editor.
+
+- Added licensing information.
+
 ## [0.9.0]
 
 Improved the "Profile with Austin" command.

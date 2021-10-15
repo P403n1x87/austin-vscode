@@ -231,7 +231,20 @@ export class AustinStats implements AustinStats {
         this._afterCbs.push(cb);
     }
 
-    public readFromStream(stream: Readable, fileName: string){
+    public readFromString(str: string, fileName: string) {
+        this.source = fileName;
+        this.clear();
+
+        let lines = str.split(/(?:\r\n|\r|\n)/g);
+        lines.forEach((line) => {
+            this.update(line);
+        });
+
+        [...this.top.values()].forEach(v => { v.own /= this.overallTotal; v.total /= this.overallTotal; });
+        this._afterCbs.forEach(cb => cb(this));
+    }
+
+    public readFromStream(stream: Readable, fileName: string) {
         this.source = fileName;
         this.clear();
 
