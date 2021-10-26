@@ -194,3 +194,5 @@ document.addEventListener('keydown', (event) => {
     // Alert the key name and key code on keydown
     vscode.postMessage({ "event": "keydown", "name": name });
 }, false);
+
+vscode.postMessage("initialized");

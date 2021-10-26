@@ -16,6 +16,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     private _source: string | null = null;
     private _lines: boolean = false;
     private _stats: AustinStats | null = null;
+    private _initialized: boolean = false;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -39,6 +40,14 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         };
 
         webviewView.webview.onDidReceiveMessage(data => {
+            if (data === "initialized") {
+                this._initialized = true;
+                if (this._stats) {
+                    this.refresh(this._stats);
+                }
+                return;
+            }
+            
             if (data === "open") {
                 vscode.commands.executeCommand('austin-vscode.load');
                 return;
@@ -91,10 +100,13 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         if (this._view) {
             this._setFlameGraphHtml();
             this._view.show?.(true);
-            this._view.webview.postMessage({
-                "meta": { "mode": stats.metadata.get("mode") },
-                "hierarchy": stats.hierarchy,
-            });
+
+            if (this._initialized) {
+                this._view.webview.postMessage({
+                    "meta": { "mode": stats.metadata.get("mode") },
+                    "hierarchy": stats.hierarchy,
+                });
+            }
             // this._source = austinFile;
         }
         const currentUri = vscode.window.activeTextEditor?.document.uri;
