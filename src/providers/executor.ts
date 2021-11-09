@@ -17,7 +17,7 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
     private command: AustinCommandArguments,
     private output: vscode.OutputChannel,
     private stats: AustinStats,
-    private fileName: string
+    private fileName: string | undefined
   ) { }
 
   private writeEmitter = new vscode.EventEmitter<string>();
@@ -29,19 +29,27 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
 
   private showStats() {
     clearDecorations();
-    this.stats.readFromString(this.buffer, this.fileName);
-    const lines = this.stats.lineMap.get(this.fileName);
-    if (lines) {
-      setLinesHeat(lines, this.stats.overallTotal);
+    this.stats.readFromString(this.buffer, this.fileName || "");
+    if (this.fileName) {
+      const lines = this.stats.lineMap.get(this.fileName);
+      if (lines) {
+        setLinesHeat(lines, this.stats.overallTotal);
+      }
     }
   }
 
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
-    this.writeEmitter.fire("Starting Profiler.\r\n");
+    let cwd = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+    this.writeEmitter.fire(`Starting Profiler in ${cwd}.\r\n`);
     this.austinProcess = spawn(this.command.cmd, this.command.args, {
       shell: true,
+      cwd: cwd,
     }); // NOSONAR
-    this.writeEmitter.fire(`Running austin with args ${this.command.args.join(' ')}.\r\n`);
+    const args = this.command.args.join(' ');
+    this.writeEmitter.fire(`Running '${this.command.cmd}' with args '${args}'.\r\n`);
+    if (!this.fileName) {
+      this.fileName = `${this.command.cmd} ${args}`;
+    }
     if (this.austinProcess) {
       this.austinProcess.on("error", (err) => {
         this.writeEmitter.fire(err.message);
@@ -51,7 +59,7 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
       });
 
       this.austinProcess.stderr!.on("data", (data) => {
-        this.output.append(data);
+        this.output.append(data.toString());
       });
 
       this.austinProcess.on("close", (code) => {

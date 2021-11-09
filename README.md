@@ -64,6 +64,39 @@ This is equivalent of running `python main.py --verbose`:
 To Run the task, execute `Tasks: Run Task` from the Command Palette and select
 the task you specified in `tasks.json`.
 
+If you need to run a more generic command, for example by invoking a virtual
+environment manager like Poetry, you can use the `command` field, e.g.
+
+```json
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "austin",
+            "label": "Profile tests",
+            "command": [
+                "poetry",
+                "run"
+            ],
+            "args": [
+                "python",
+                "-m",
+                "pytest",
+            ]
+        }
+    ]
+}
+```
+
+In the above task definition, the Austin command is placed in between the
+`command` and the `args` lists. That is, the above ends up running
+
+```console
+poetry run austin <austin args> python -m pytest
+```
+
+from the current working directory.
+
 ### Profiling a standalone script
 
 To profile a Python script, open it up in VS Code, open the command palette and

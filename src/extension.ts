@@ -113,33 +113,8 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	if (vscode.window.activeTextEditor?.document.languageId === "python") {
-		austinModeStatusBarItem.show();
-		austinIntervalStatusBarItem.show();
-	}
-
-	vscode.window.onDidChangeActiveTextEditor((event) => {
-		if (event?.document.languageId === "python") {
-			austinModeStatusBarItem.show();
-			austinIntervalStatusBarItem.show();
-		}
-		else {
-			austinModeStatusBarItem.hide();
-			austinIntervalStatusBarItem.hide();
-		}
-	});
-
-	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
-		if (e.affectsConfiguration('austin.path')){
-			AustinRuntimeSettings.resetPath();
-		}
-		if (e.affectsConfiguration('austin.mode')){
-			AustinRuntimeSettings.resetMode();
-		}
-		if (e.affectsConfiguration('austin.interval')){
-			AustinRuntimeSettings.resetInterval();
-		}
-	}));
+	austinModeStatusBarItem.show();
+	austinIntervalStatusBarItem.show();
 }
 
 
