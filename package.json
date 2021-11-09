@@ -122,9 +122,7 @@
     "taskDefinitions": [
       {
         "type": "austin",
-        "required": [
-          "file"
-        ],
+        "required": [],
         "properties": {
           "file": {
             "type": "string",
@@ -133,6 +131,10 @@
           "args": {
             "type": "array",
             "description": "Optional list of arguments to the task"
+          },
+          "command": {
+            "type": "array",
+            "description": "The command to run, together with its arguments, e.g. poetry."
           },
           "mode": {
             "description": "Profiling mode",
