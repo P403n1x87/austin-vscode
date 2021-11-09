@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.9.2]
+
+- Fixed an issue with the flame graph view receiving data before being ready.
+
 ## [0.9.1]
 
 - Fixed the issue with the `Profile with Austin` command that prevented the data
