@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.10.0]
+
+- Extended the Austin task definition to accept and run arbitrary commands.
+
 ## [0.9.3]
 
 - Fixed packaging issue.
