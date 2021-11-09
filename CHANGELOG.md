@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.9.3]
+
+- Fixed packaging issue.
+
 ## [0.9.2]
 
 - Fixed an issue with the flame graph view receiving data before being ready.
