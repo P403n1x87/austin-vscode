@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import * as path from "path";
 import { getAustinCommand } from "../utils/commandFactory";
 import { AustinCommandExecutor } from "./executor";
 import { AustinStats } from "../model";
@@ -36,10 +35,11 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
   public buildTask(
     definition: AustinProfileTaskDefinition,
     scope: vscode.WorkspaceFolder | vscode.TaskScope,
-    resolvedPath: vscode.Uri): vscode.Task {
+    resolvedPath: vscode.Uri | undefined): vscode.Task {
 
     const command = getAustinCommand(
-      resolvedPath.fsPath,
+      resolvedPath?.fsPath,
+      definition.command,
       definition.args,
       definition.austinArgs,
       definition.interval,
@@ -48,14 +48,14 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
     return new vscode.Task(
       definition,
       scope,
-      `profile ${resolvedPath.fsPath}`,
+      resolvedPath ? `profile ${resolvedPath.fsPath}` : "profile", // TODO: add better logging
       "austin",
       new vscode.CustomExecution(async (): Promise<vscode.Pseudoterminal> => {
         return new AustinCommandExecutor(
           command,
           this.output,
           this.stats,
-          resolvedPath.fsPath
+          resolvedPath?.fsPath
         );
       })
     );
@@ -67,10 +67,14 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
       return;
     }
     const definition: AustinProfileTaskDefinition = <any>_task.definition;
+
+    let resolvedPath: vscode.Uri | undefined = undefined;
     // resolveTask requires that the same definition object be used.
-    const resolvedPath: vscode.Uri = this.workspaceRoot
-      ? vscode.Uri.joinPath(this.workspaceRoot, definition.file)
-      : vscode.Uri.parse(definition.file);
+    if (definition.file) {
+      resolvedPath = this.workspaceRoot
+        ? vscode.Uri.joinPath(this.workspaceRoot, definition.file)
+        : vscode.Uri.parse(definition.file);
+    }
 
     return this.buildTask(
       definition,
@@ -83,7 +87,7 @@ interface AustinProfileTaskDefinition extends vscode.TaskDefinition {
   /**
    * The python file to profile
    */
-  file: string;
+  file?: string;
 
   /**
    * Optional arguments to the python file
@@ -104,4 +108,9 @@ interface AustinProfileTaskDefinition extends vscode.TaskDefinition {
    * Optional arguments to austin
    */
   austinArgs?: string[];
+
+  /**
+   * Optional command to run before austin, including its arguments
+   */
+  command?: string[];
 }
