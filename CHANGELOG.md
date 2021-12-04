@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.10.2]
+
+- Minor UI improvements.
+
 ## [0.10.1]
 
 - Tasks running in multi-root workspaces will now ask the user to pick the

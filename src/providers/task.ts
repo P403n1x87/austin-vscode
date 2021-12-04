@@ -44,7 +44,11 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
             cwd = vscode.workspace.workspaceFolders[0].uri.fsPath;
           } else {
             cwd = await vscode.window.showQuickPick(
-              vscode.workspace.workspaceFolders.map(f => f.uri.fsPath), { "canPickMany": false }
+              vscode.workspace.workspaceFolders.map(f => f.uri.fsPath),
+              {
+                "title": "Pick the working directory for the task",
+                "canPickMany": false,
+              }
             );
           }
         } else if (vscode.window.activeTextEditor) {

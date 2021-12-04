@@ -36,6 +36,8 @@ export function setLineHeat(line: number, own: number, total: number, overallTot
 }
 
 export function setLinesHeat(lines: Map<number, [number, number]>, overallTotal: number) {
+    clearDecorations();
+
     const localTotal = Array.from(lines.values()).map(v => v[0]).reduce((s, c) => s + c, 0);
     lines.forEach((v, k) => {
         let own: number, total: number;
