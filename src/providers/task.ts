@@ -7,16 +7,11 @@ import { AustinMode } from "../types";
 
 export class AustinProfileTaskProvider implements vscode.TaskProvider {
   private austinPromise: Thenable<vscode.Task[]> | undefined = undefined;
-  private workspaceRoot: vscode.Uri | undefined;
   private output = vscode.window.createOutputChannel("Austin");
 
   constructor(
     private stats: AustinStats,
-  ) {
-    this.workspaceRoot = vscode.workspace.workspaceFolders
-      ? vscode.workspace.workspaceFolders[0].uri
-      : undefined;
-  }
+  ) { }
 
   public provideTasks(): Thenable<vscode.Task[]> | undefined {
     if (!this.austinPromise) {
@@ -29,33 +24,55 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
     return this.buildTask(
       { file: path.fsPath, type: "austin" },
       vscode.TaskScope.Workspace,
-      path);
+    );
   }
 
   public buildTask(
     definition: AustinProfileTaskDefinition,
     scope: vscode.WorkspaceFolder | vscode.TaskScope,
-    resolvedPath: vscode.Uri | undefined): vscode.Task {
-
-    const command = getAustinCommand(
-      resolvedPath?.fsPath,
-      definition.command,
-      definition.args,
-      definition.austinArgs,
-      definition.interval,
-      definition.mode
-    );
+  ): vscode.Task {
     return new vscode.Task(
       definition,
       scope,
-      resolvedPath ? `profile ${resolvedPath.fsPath}` : "profile", // TODO: add better logging
+      definition.file ? `profile ${definition.file}` : "profile", // TODO: add better logging
       "austin",
       new vscode.CustomExecution(async (): Promise<vscode.Pseudoterminal> => {
+        let cwd: string | undefined = undefined;
+
+        if (vscode.workspace.workspaceFolders) {
+          if (vscode.workspace.workspaceFolders.length === 1) {
+            cwd = vscode.workspace.workspaceFolders[0].uri.fsPath;
+          } else {
+            cwd = await vscode.window.showQuickPick(
+              vscode.workspace.workspaceFolders.map(f => f.uri.fsPath), { "canPickMany": false }
+            );
+          }
+        } else if (vscode.window.activeTextEditor) {
+          cwd = vscode.workspace.getWorkspaceFolder(vscode.window.activeTextEditor.document.uri)?.uri.fsPath;
+        }
+
+        let resolvedPath: vscode.Uri | undefined = undefined;
+        if (definition.file) {
+          resolvedPath = cwd
+            ? vscode.Uri.joinPath(vscode.Uri.parse(cwd), definition.file)
+            : vscode.Uri.parse(definition.file);
+        }
+
+        const command = getAustinCommand(
+          resolvedPath?.fsPath,
+          definition.command,
+          definition.args,
+          definition.austinArgs,
+          definition.interval,
+          definition.mode
+        );
+
         return new AustinCommandExecutor(
           command,
+          cwd!,
           this.output,
           this.stats,
-          resolvedPath?.fsPath
+          resolvedPath?.fsPath,
         );
       })
     );
@@ -68,18 +85,7 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
     }
     const definition: AustinProfileTaskDefinition = <any>_task.definition;
 
-    let resolvedPath: vscode.Uri | undefined = undefined;
-    // resolveTask requires that the same definition object be used.
-    if (definition.file) {
-      resolvedPath = this.workspaceRoot
-        ? vscode.Uri.joinPath(this.workspaceRoot, definition.file)
-        : vscode.Uri.parse(definition.file);
-    }
-
-    return this.buildTask(
-      definition,
-      _task.scope ?? vscode.TaskScope.Workspace,
-      resolvedPath);
+    return this.buildTask(definition, _task.scope ?? vscode.TaskScope.Workspace);
   }
 }
 

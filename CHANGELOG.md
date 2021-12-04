@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.10.1]
+
+- Tasks running in multi-root workspaces will now ask the user to pick the
+  working directory within which the command should be run.
+
 ## [0.10.0]
 
 - Extended the Austin task definition to accept and run arbitrary commands.

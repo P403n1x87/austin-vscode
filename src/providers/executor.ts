@@ -15,6 +15,7 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
 
   constructor(
     private command: AustinCommandArguments,
+    private cwd: string,
     private output: vscode.OutputChannel,
     private stats: AustinStats,
     private fileName: string | undefined
@@ -39,11 +40,10 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
   }
 
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
-    let cwd = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-    this.writeEmitter.fire(`Starting Profiler in ${cwd}.\r\n`);
+    this.writeEmitter.fire(`Starting Profiler in ${this.cwd}.\r\n`);
     this.austinProcess = spawn(this.command.cmd, this.command.args, {
       shell: true,
-      cwd: cwd,
+      cwd: this.cwd,
     }); // NOSONAR
     const args = this.command.args.join(' ');
     this.writeEmitter.fire(`Running '${this.command.cmd}' with args '${args}'.\r\n`);
