@@ -4,6 +4,7 @@ import { AustinCommandExecutor } from "./executor";
 import { AustinStats } from "../model";
 import { isPythonExtensionAvailable } from "../utils/pythonExtension";
 import { AustinMode } from "../types";
+import { isAbsolute } from "path";
 
 export class AustinProfileTaskProvider implements vscode.TaskProvider {
   private austinPromise: Thenable<vscode.Task[]> | undefined = undefined;
@@ -57,9 +58,9 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
 
         let resolvedPath: vscode.Uri | undefined = undefined;
         if (definition.file) {
-          resolvedPath = cwd
-            ? vscode.Uri.joinPath(vscode.Uri.parse(cwd), definition.file)
-            : vscode.Uri.parse(definition.file);
+          resolvedPath = isAbsolute(definition.file)
+            ? vscode.Uri.file(definition.file)
+            : vscode.Uri.joinPath(vscode.Uri.file(cwd!), definition.file);
         }
 
         const command = getAustinCommand(
