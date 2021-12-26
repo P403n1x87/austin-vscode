@@ -2,6 +2,11 @@ import { AustinRuntimeSettings } from '../settings';
 import { AustinMode } from '../types';
 import { getConfiguredInterpreter } from './pythonExtension';
 
+
+function maybeEnquote(arg: string): string {
+    return arg.indexOf(' ') >= 0 ? `"${arg}"` : arg;
+}
+
 export interface AustinCommandArguments {
     cmd: string
     args: string[]
@@ -35,10 +40,11 @@ export function getAustinCommand(
 
     if (austinArgs) { _args = _args.concat(austinArgs); }
     if (pythonFile) {
-        _args.push(getConfiguredInterpreter());
-        _args.push(pythonFile);
+        _args.push(maybeEnquote(getConfiguredInterpreter()));
+        _args.push(maybeEnquote(pythonFile));
     }
-    if (pythonArgs) { _args = _args.concat(pythonArgs); }
+
+    if (pythonArgs) { _args = _args.concat(pythonArgs.map(maybeEnquote)); }
 
     return {
         cmd: cmd,

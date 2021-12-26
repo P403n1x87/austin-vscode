@@ -1,5 +1,14 @@
 # Change Log
 
+## [0.10.4]
+
+- Fixed support for paths with spaces in Austin tasks.
+
+## [0.10.3]
+
+- Fixed a bug that caused the workspace root folder to be repeated when trying
+  to profile the active script.
+
 ## [0.10.2]
 
 - Minor UI improvements.
