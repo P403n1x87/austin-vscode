@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.10.5]
+
+- Fixed support for commands with spaces in Austin tasks.
+
 ## [0.10.4]
 
 - Fixed support for paths with spaces in Austin tasks.

@@ -47,7 +47,7 @@ export function getAustinCommand(
     if (pythonArgs) { _args = _args.concat(pythonArgs.map(maybeEnquote)); }
 
     return {
-        cmd: cmd,
+        cmd: maybeEnquote(cmd),
         args: _args
     };
 }
