@@ -10,7 +10,7 @@ function delay(ms: number) {
 
 export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
-    public static readonly viewType = 'austin-vscode.flameGraph';
+    public static readonly viewType = 'austin-vscode.flame-graph';
 
     private _view?: vscode.WebviewView;
     private _source: string | null = null;
