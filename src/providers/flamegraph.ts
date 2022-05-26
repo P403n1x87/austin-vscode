@@ -121,6 +121,9 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     private _setFlameGraphHtml() {
         // Use a nonce to only allow a specific script to be run.
         const nonce = getNonce();
+        if (!this._view){
+            return;
+        }
         const webview = this._view?.webview!;
 
         const d3ScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3', 'dist', 'd3.js'));
@@ -149,6 +152,9 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     }
 
     public showLoading() {
+        if (!this._view){
+            return;
+        }
         const webview = this._view?.webview!;
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
 
@@ -174,6 +180,9 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     }
 
     private _setWelcomeHtml() {
+        if (!this._view){
+            return;
+        }
         const webview = this._view?.webview!;
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
         const austinLogoUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.svg'));

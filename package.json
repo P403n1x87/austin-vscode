@@ -26,6 +26,7 @@
     "onCommand:austin-vscode.profile",
     "onCommand:austin-vscode.load",
     "onStartupFinished",
+    "onView:austin-vscode.flameGraph",
     "onView:austinTreeView"
   ],
   "main": "./out/extension.js",
@@ -80,7 +81,7 @@
           "id": "austin-vscode.flameGraph",
           "name": "Flame Graph",
           "icon": "media/austin.svg",
-          "visibility": "hidden"
+          "visibility": "collapsed"
         }
       ],
       "austin-stats": [
