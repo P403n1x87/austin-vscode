@@ -6,6 +6,8 @@ import { AustinProfileTaskProvider } from './providers/task';
 
 
 export class AustinController {
+    private output = vscode.window.createOutputChannel("Austin");
+
     public constructor(private stats: AustinStats, private provider: AustinProfileTaskProvider) { }
 
     public async profileScript() {
@@ -35,11 +37,14 @@ export class AustinController {
             }
         }).then((uris) => {
             if (uris) {
+                this.output.appendLine(`Loading ${uris[0].fsPath}`);
                 const currentUri = uris[0];
                 if (currentUri?.scheme === "file") {
                     const austinFile = currentUri.fsPath;
+                    this.output.appendLine(`Loading Austin File ${austinFile}`);
                     this.stats.readFromFile(austinFile);
                 }
+                this.output.appendLine(`Completed Loading Austin File.`);
             }
         });
     }

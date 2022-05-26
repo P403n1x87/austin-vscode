@@ -26,7 +26,8 @@
     "onCommand:austin-vscode.profile",
     "onCommand:austin-vscode.load",
     "onStartupFinished",
-    "onView:austinTreeView"
+    "onView:austin-vscode.flame-graph",
+    "onView:austin-vscode.austin-stats"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -60,7 +61,7 @@
     "viewsContainers": {
       "panel": [
         {
-          "id": "flame-graph",
+          "id": "flame-graph-container",
           "title": "Flame Graph",
           "icon": "media/austin.svg"
         }
@@ -74,13 +75,12 @@
       ]
     },
     "views": {
-      "flame-graph": [
+      "flame-graph-container": [
         {
           "type": "webview",
-          "id": "austin-vscode.flameGraph",
+          "id": "austin-vscode.flame-graph",
           "name": "Flame Graph",
-          "icon": "media/austin.svg",
-          "visibility": "hidden"
+          "icon": "media/austin.svg"
         }
       ],
       "austin-stats": [

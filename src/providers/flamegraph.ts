@@ -10,7 +10,7 @@ function delay(ms: number) {
 
 export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
-    public static readonly viewType = 'austin-vscode.flameGraph';
+    public static readonly viewType = 'austin-vscode.flame-graph';
 
     private _view?: vscode.WebviewView;
     private _source: string | null = null;
@@ -119,9 +119,12 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     }
 
     private _setFlameGraphHtml() {
+        if (this._view === undefined || this._view.webview === undefined) {
+            return;
+        }
         // Use a nonce to only allow a specific script to be run.
         const nonce = getNonce();
-        const webview = this._view?.webview!;
+        const webview = this._view.webview;
 
         const d3ScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3', 'dist', 'd3.js'));
         const d3FlameGraphScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3-flame-graph', 'dist', 'd3-flamegraph.js'));
@@ -149,7 +152,10 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     }
 
     public showLoading() {
-        const webview = this._view?.webview!;
+        if (this._view === undefined || this._view.webview === undefined) {
+            return;
+        }
+        const webview = this._view.webview;
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
 
         webview.html = `<!DOCTYPE html>
@@ -174,7 +180,10 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     }
 
     private _setWelcomeHtml() {
-        const webview = this._view?.webview!;
+        if (this._view === undefined || this._view.webview === undefined) {
+            return;
+        }
+        const webview = this._view.webview;
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
         const austinLogoUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.svg'));
 
