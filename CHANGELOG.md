@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.10.6]
+
+- Fixed a bug that prevented loading Austin stats when the flame graph view was
+  not showing  (contributed by Anthony Shaw).
+
 ## [0.10.5]
 
 - Fixed support for commands with spaces in Austin tasks.
