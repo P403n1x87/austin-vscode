@@ -8,10 +8,10 @@ import { isAbsolute } from "path";
 
 export class AustinProfileTaskProvider implements vscode.TaskProvider {
   private austinPromise: Thenable<vscode.Task[]> | undefined = undefined;
-  private output = vscode.window.createOutputChannel("Austin");
 
   constructor(
     private stats: AustinStats,
+    private output: vscode.OutputChannel,
   ) { }
 
   public provideTasks(): Thenable<vscode.Task[]> | undefined {

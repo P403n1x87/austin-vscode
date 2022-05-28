@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.10.7]
+
+- Fixed a bug that prevented the flame graph panel from loading.
+
 ## [0.10.6]
 
 - Fixed a bug that prevented loading Austin stats when the flame graph view was

@@ -15,9 +15,11 @@ export function activate(context: vscode.ExtensionContext) {
 		clearDecorations();
 	});
 
+	const output = vscode.window.createOutputChannel("Austin");
+
 	const stats = new AustinStats();
-	const austinProfileProvider = new AustinProfileTaskProvider(stats);
-	const controller = new AustinController(stats, austinProfileProvider);
+	const austinProfileProvider = new AustinProfileTaskProvider(stats, output);
+	const controller = new AustinController(stats, austinProfileProvider, output);
 
 	const flameGraphViewProvider = new FlameGraphViewProvider(context.extensionUri);
 	const topProvider = new TopDataProvider();

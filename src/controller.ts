@@ -6,9 +6,11 @@ import { AustinProfileTaskProvider } from './providers/task';
 
 
 export class AustinController {
-    private output = vscode.window.createOutputChannel("Austin");
-
-    public constructor(private stats: AustinStats, private provider: AustinProfileTaskProvider) { }
+    public constructor(
+        private stats: AustinStats,
+        private provider: AustinProfileTaskProvider,
+        private output: vscode.OutputChannel,
+    ) { }
 
     public async profileScript() {
         const currentUri = vscode.window.activeTextEditor?.document.uri;
