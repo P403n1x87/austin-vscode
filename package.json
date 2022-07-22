@@ -116,7 +116,7 @@
         "command": "austin-vscode.profile",
         "key": "shift+f5",
         "mac": "shift+f5",
-        "when": "editorLangId == python"
+        "when": "!inDebugMode && editorLangId == python"
       }
     ],
     "taskDefinitions": [
