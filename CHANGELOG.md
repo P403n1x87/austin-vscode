@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.10.8]
+
+- Fixed a conflict between Austin and debug mode (contributed by @slishak)
+
 ## [0.10.7]
 
 - Fixed a bug that prevented the flame graph panel from loading.
