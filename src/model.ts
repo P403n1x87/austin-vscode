@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
-import { createReadStream, existsSync } from 'fs';
+import { createReadStream, existsSync, readFile } from 'fs';
 import { createInterface } from 'readline';
 import './stringExtension';
 import './mapExtension';
+import './utils/io';
 import { isAbsolute } from 'path';
 import { Readable } from 'stream';
+import { readHead } from './utils/io';
+import { parseMojo } from './utils/mojo';
 
 
 export class TopStats {
@@ -262,8 +265,33 @@ export class AustinStats implements AustinStats {
         });
     }
 
+    public readFromMojo(fileName: string) {
+        this.source = fileName;
+        this.clear();
+
+        this._beforeCbs.forEach(cb => cb());
+
+        readFile(fileName, (err, data) => {
+            if (err) {
+                vscode.window.showErrorMessage(`Error reading file: ${err}`);
+                console.error(err);
+                return;
+            }
+
+            parseMojo(data.values(), this);
+
+            this._afterCbs.forEach(cb => cb(this));
+        });
+    }
+
     public readFromFile(file: string) {
-        return this.readFromStream(createReadStream(file), file);
+        readHead(file, 3).then((head) => {
+            if (head === "MOJ") {
+                this.readFromMojo(file);
+            } else {
+                this.readFromStream(createReadStream(file), file);
+            }
+        });
     }
 }
 
