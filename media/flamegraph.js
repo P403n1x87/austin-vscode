@@ -49,7 +49,8 @@ var stringToColour = function (data, highlight = false) {
         default:
             let h = hash(module) % 360;
             let s = hash(scope) % 10;
-            return hslToHex(h >= 0 ? h : -h, 60 + s, highlight ? 90 : 70);
+            let isPy = module.endsWith(".py");
+            return hslToHex(h >= 0 ? h : -h, (isPy ? 60 : 20) + s, highlight ? 90 : 70);
     }
 
     return hslToHex(hue, 0 + sat, highlight ? 90 : 70);
