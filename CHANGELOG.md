@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.11.0]
+
+- Fixed support for the "Profile with Austin" command on MacOS.
+
 ## [0.10.8]
 
 - Fixed a conflict between Austin and debug mode (contributed by @slishak)
