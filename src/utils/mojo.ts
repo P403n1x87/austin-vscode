@@ -65,6 +65,8 @@ const MOJO_EVENT = Object.freeze({
     "idle": 8,
     "time": 9,
     "memory": 10,
+    "string": 11,
+    "stringReference": 12,
 });
 
 function consumeHeader(mojo: IterableIterator<number>): number {
@@ -85,11 +87,20 @@ function consumeStack(mojo: IterableIterator<number>) {
     return `P${pid};T${tid}`;
 }
 
-function consumeFrame(mojo: IterableIterator<number>) {
+interface FrameData {
+    key: number;
+    frame: string;
+}
+
+function consumeFrame(mojo: IterableIterator<number>, stringRefs: Map<number, string>): FrameData {
     let key = consumeVarInt(mojo);
-    let filename = consumeString(mojo);
-    let scope = consumeString(mojo);
+    let filename = stringRefs.get(consumeVarInt(mojo));
+    let scope = stringRefs.get(consumeVarInt(mojo));
     let line = consumeVarInt(mojo);
+
+    if (filename === undefined || scope === undefined) {
+        throw new Error("Invalid string references in frame event");
+    }
 
     return { "key": key, "frame": `${filename}:${scope}:${line}` };
 }
@@ -115,6 +126,7 @@ function finalizeStack(stack: string, time: number | null, memory: number | null
 export function parseMojo(mojo: IterableIterator<number>, stats: AustinStats) {
     let metadata = new Map<string, string>();
     let frameRefs = new Map<number, string>();
+    let stringRefs = new Map<number, string>();
 
     let mojoVersion = consumeHeader(mojo);
 
@@ -157,7 +169,7 @@ export function parseMojo(mojo: IterableIterator<number>, stats: AustinStats) {
                     break;
 
                 case MOJO_EVENT.frame:
-                    let frameData = consumeFrame(mojo);
+                    let frameData = consumeFrame(mojo, stringRefs);
                     frameRefs.set(frameData.key, frameData.frame);
                     break;
 
@@ -187,6 +199,20 @@ export function parseMojo(mojo: IterableIterator<number>, stats: AustinStats) {
 
                 case MOJO_EVENT.memory:
                     currentMemoryMetric = consumeVarInt(mojo);
+                    break;
+
+                case MOJO_EVENT.string:
+                    let stringKey = consumeVarInt(mojo);
+                    let stringValue = consumeString(mojo);
+                    stringRefs.set(stringKey, stringValue);
+                    break;
+
+                case MOJO_EVENT.stringReference:
+                    let string = stringRefs.get(consumeVarInt(mojo));
+                    if (string === undefined) {
+                        throw new Error("Invalid string reference");
+                    }
+                    currentStack += string;
                     break;
 
                 default:
