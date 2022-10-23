@@ -2,6 +2,8 @@
 
 ## [0.11.0]
 
+- Added support for the MOJO file format.
+
 - Fixed support for the "Profile with Austin" command on MacOS.
 
 ## [0.10.8]
