@@ -84,7 +84,7 @@ function consumeStack(mojo: IterableIterator<number>) {
     let pid = consumeVarInt(mojo);
     let tid = consumeString(mojo);
 
-    return `P${pid};T${tid}`;
+    return [pid.toString(), tid];
 }
 
 interface FrameData {
@@ -92,10 +92,10 @@ interface FrameData {
     frame: string;
 }
 
-function consumeFrame(mojo: IterableIterator<number>, stringRefs: Map<number, string>): FrameData {
+function consumeFrame(mojo: IterableIterator<number>, stringRefs: Map<string, string>, pid: string): FrameData {
     let key = consumeVarInt(mojo);
-    let filename = stringRefs.get(consumeVarInt(mojo));
-    let scope = stringRefs.get(consumeVarInt(mojo));
+    let filename = stringRefs.get(`${pid}:${consumeVarInt(mojo)}`);
+    let scope = stringRefs.get(`${pid}:${consumeVarInt(mojo)}`);
     let line = consumeVarInt(mojo);
 
     if (filename === undefined || scope === undefined) {
@@ -125,11 +125,13 @@ function finalizeStack(stack: string, time: number | null, memory: number | null
 
 export function parseMojo(mojo: IterableIterator<number>, stats: AustinStats) {
     let metadata = new Map<string, string>();
-    let frameRefs = new Map<number, string>();
-    let stringRefs = new Map<number, string>();
+    let frameRefs = new Map<string, string>();
+    let stringRefs = new Map<string, string>();
 
     let mojoVersion = consumeHeader(mojo);
 
+    let currentPid = null;
+    let currentTid = null;
     let currentStack = null;
     let currentTimeMetric = null;
     let currentMemoryMetric = null;
@@ -160,7 +162,8 @@ export function parseMojo(mojo: IterableIterator<number>, stats: AustinStats) {
                         );
                     }
 
-                    currentStack = consumeStack(mojo);
+                    [currentPid, currentTid] = consumeStack(mojo);
+                    currentStack = `P${currentPid};T${currentTid}`;
                     currentTimeMetric = null;
                     currentMemoryMetric = null;
                     currentIdle = false;
@@ -169,8 +172,11 @@ export function parseMojo(mojo: IterableIterator<number>, stats: AustinStats) {
                     break;
 
                 case MOJO_EVENT.frame:
-                    let frameData = consumeFrame(mojo, stringRefs);
-                    frameRefs.set(frameData.key, frameData.frame);
+                    if (currentPid === null) {
+                        throw new Error("Frame event before stack event");
+                    }
+                    let frameData = consumeFrame(mojo, stringRefs, currentPid);
+                    frameRefs.set(`${currentPid}:${frameData.key}`, frameData.frame);
                     break;
 
                 case MOJO_EVENT.invalidFrame:
@@ -178,7 +184,8 @@ export function parseMojo(mojo: IterableIterator<number>, stats: AustinStats) {
                     break;
 
                 case MOJO_EVENT.frameReference:
-                    currentStack += `;${frameRefs.get(consumeVarInt(mojo))}`;
+                    let key = `${currentPid}:${consumeVarInt(mojo)}`;
+                    currentStack += `;${frameRefs.get(key)}`;
                     break;
 
                 case MOJO_EVENT.kernelFrame:
@@ -204,11 +211,11 @@ export function parseMojo(mojo: IterableIterator<number>, stats: AustinStats) {
                 case MOJO_EVENT.string:
                     let stringKey = consumeVarInt(mojo);
                     let stringValue = consumeString(mojo);
-                    stringRefs.set(stringKey, stringValue);
+                    stringRefs.set(`${currentPid}:${stringKey}`, stringValue);
                     break;
 
                 case MOJO_EVENT.stringReference:
-                    let string = stringRefs.get(consumeVarInt(mojo));
+                    let string = stringRefs.get(`${currentPid}:${consumeVarInt(mojo)}`);
                     if (string === undefined) {
                         throw new Error("Invalid string reference");
                     }

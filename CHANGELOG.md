@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.11.1]
+
+- Fixed string reference resolution for the MOJO format.
+
 ## [0.11.0]
 
 - Added support for the MOJO file format.
