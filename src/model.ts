@@ -234,6 +234,11 @@ export class AustinStats implements AustinStats {
         this._afterCbs.push(cb);
     }
 
+    private finalize() {
+        [...this.top.values()].forEach(v => { v.own /= this.overallTotal; v.total /= this.overallTotal; });
+        this._afterCbs.forEach((cb) => cb(this));
+    }
+
     public readFromString(str: string, fileName: string) {
         this.source = fileName;
         this.clear();
@@ -243,8 +248,7 @@ export class AustinStats implements AustinStats {
             this.update(line);
         });
 
-        [...this.top.values()].forEach(v => { v.own /= this.overallTotal; v.total /= this.overallTotal; });
-        this._afterCbs.forEach(cb => cb(this));
+        this.finalize();
     }
 
     public readFromStream(stream: Readable, fileName: string) {
@@ -259,10 +263,7 @@ export class AustinStats implements AustinStats {
 
         readInterface.on("line", this.update.bind(this));
 
-        readInterface.on("close", () => {
-            [...this.top.values()].forEach(v => { v.own /= this.overallTotal; v.total /= this.overallTotal; });
-            this._afterCbs.forEach(cb => cb(this));
-        });
+        readInterface.on("close", this.finalize.bind(this));
     }
 
     public readFromMojo(fileName: string) {
@@ -280,7 +281,7 @@ export class AustinStats implements AustinStats {
 
             parseMojo(data.values(), this);
 
-            this._afterCbs.forEach(cb => cb(this));
+            this.finalize();
         });
     }
 

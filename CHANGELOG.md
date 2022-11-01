@@ -5,6 +5,8 @@
 - Fixed integer parsing for the MOJO format that caused stacks to be wrongly
   reconstructed, resulting in incorrectly shaped flame graphs.
 
+- Fixed the Top view that displayed wrong percentages.
+
 ## [0.11.1]
 
 - Fixed string reference resolution for the MOJO format.

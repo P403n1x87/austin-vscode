@@ -246,7 +246,8 @@ export function parseMojo(mojo: IterableIterator<number>, stats: AustinStats) {
                 );
             }
         } else {
-            vscode.window.showErrorMessage(`Failed to parse the MOJO file ${stats.source}: ${e.message}`);
+            let message = (e instanceof Error) ? e.message : e;
+            vscode.window.showErrorMessage(`Failed to parse the MOJO file ${stats.source}: ${message}`);
         }
     }
 }
