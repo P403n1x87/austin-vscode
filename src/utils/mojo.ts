@@ -22,17 +22,17 @@ function consume(mojo: IterableIterator<number>) {
 
 /* MOJO Data Types */
 
-function consumeVarInt(mojo: IterableIterator<number>): number {
-    let n = 0;
-    let s = 6;
-    let b = consume(mojo);
-    const sign = (b & 0x40) >> 6;
+function consumeVarInt(mojo: IterableIterator<number>): bigint {
+    let n: bigint = 0n;
+    let s = 6n;
+    let b = BigInt(consume(mojo));
+    const sign = (b & 0x40n);
 
-    n |= (b & 0x3F);
-    while (b & 0x80) {
-        b = consume(mojo);
-        n |= ((b & 0x7F) << s);
-        s += 7;
+    n |= (b & 0x3Fn);
+    while (b & 0x80n) {
+        b = BigInt(consume(mojo));
+        n |= ((b & 0x7Fn) << s);
+        s += 7n;
     }
 
     return sign ? -n : n;
@@ -69,7 +69,7 @@ const MOJO_EVENT = Object.freeze({
     "stringReference": 12,
 });
 
-function consumeHeader(mojo: IterableIterator<number>): number {
+function consumeHeader(mojo: IterableIterator<number>): bigint {
     if (consume(mojo) !== ord('M') || consume(mojo) !== ord('O') || consume(mojo) !== ord('J')) {
         throw new Error("Invalid header");
     }
@@ -88,15 +88,18 @@ function consumeStack(mojo: IterableIterator<number>) {
 }
 
 interface FrameData {
-    key: number;
+    key: bigint;
     frame: string;
 }
 
 function consumeFrame(mojo: IterableIterator<number>, stringRefs: Map<string, string>, pid: string): FrameData {
     let key = consumeVarInt(mojo);
-    let filename = stringRefs.get(`${pid}:${consumeVarInt(mojo)}`);
-    let scope = stringRefs.get(`${pid}:${consumeVarInt(mojo)}`);
+    let filenameKey = consumeVarInt(mojo);
+    let scopeKey = consumeVarInt(mojo);
     let line = consumeVarInt(mojo);
+
+    let filename = stringRefs.get(`${pid}:${filenameKey}`);
+    let scope = (scopeKey === 1n) ? "<unknown>" : stringRefs.get(`${pid}:${scopeKey}`);
 
     if (filename === undefined || scope === undefined) {
         throw new Error("Invalid string references in frame event");
@@ -109,7 +112,7 @@ function consumeKernel(mojo: IterableIterator<number>) {
     return `;kernel:${consumeString(mojo)}:0`;
 }
 
-function finalizeStack(stack: string, time: number | null, memory: number | null, idle: boolean, gc: boolean, full: boolean): string {
+function finalizeStack(stack: string, time: bigint | null, memory: bigint | null, idle: boolean, gc: boolean, full: boolean): string {
     if (gc) {
         stack += ";:GC:";
     }
@@ -163,7 +166,7 @@ export function parseMojo(mojo: IterableIterator<number>, stats: AustinStats) {
                     }
 
                     [currentPid, currentTid] = consumeStack(mojo);
-                    currentStack = `P${currentPid};T${currentTid}`;
+                    currentStack = `P${currentPid};T${Number("0x" + currentTid)}`;
                     currentTimeMetric = null;
                     currentMemoryMetric = null;
                     currentIdle = false;
@@ -243,7 +246,7 @@ export function parseMojo(mojo: IterableIterator<number>, stats: AustinStats) {
                 );
             }
         } else {
-            vscode.window.showErrorMessage(`Failed to parse the MOJO file ${stats.source}`);
+            vscode.window.showErrorMessage(`Failed to parse the MOJO file ${stats.source}: ${e.message}`);
         }
     }
 }

@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.11.2]
+
+- Fixed integer parsing for the MOJO format that caused stacks to be wrongly
+  reconstructed, resulting in incorrectly shaped flame graphs.
+
 ## [0.11.1]
 
 - Fixed string reference resolution for the MOJO format.
