@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.11.3]
+
+- Fix extension packaging issue
+
 ## [0.11.2]
 
 - Fixed integer parsing for the MOJO format that caused stacks to be wrongly
