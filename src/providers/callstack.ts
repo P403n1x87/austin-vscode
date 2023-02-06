@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AustinStats, TopStats } from '../model';
+import { basename } from 'path';
 
 function _normalizeScope(scope: string) {
     let head = scope.match(/^([PT])([x0-9A-Fa-f]+)$/);
@@ -27,6 +28,7 @@ export class CallStackItem extends vscode.TreeItem {
         super(_normalizeScope(stats.scope!), collapsibleState);
 
         this.tooltip = stats.module ? `in ${stats.module}` : undefined;
+        this.description = stats.module ? basename(stats.module) : undefined;
         this.command = {
             command: 'austin-vscode.openSourceAtLine',
             title: "open source at line",

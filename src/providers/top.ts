@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AustinStats, TopStats } from '../model';
+import { basename } from 'path';
 
 export class TopItem extends vscode.TreeItem {
 
@@ -9,7 +10,8 @@ export class TopItem extends vscode.TreeItem {
     ) {
         super(`[ ${(stats.own * 100).toFixed(2)}% | ${(stats.total * 100).toFixed(2)}% ] ${stats.scope}`, collapsibleState);
 
-        this.tooltip = `in ${stats.module}`;
+        this.tooltip = stats.module ? `in ${stats.module}` : undefined;
+        this.description = stats.module ? basename(stats.module) : undefined;
         this.command = {
             command: 'austin-vscode.openSourceAtLine',
             title: "open source at line",
