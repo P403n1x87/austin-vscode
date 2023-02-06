@@ -47,7 +47,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 }
                 return;
             }
-            
+
             if (data === "open") {
                 vscode.commands.executeCommand('austin-vscode.load');
                 return;
@@ -111,7 +111,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         }
         const currentUri = vscode.window.activeTextEditor?.document.uri;
         if (currentUri?.scheme === "file") {
-            const lines = stats.lineMap.get(currentUri.fsPath);
+            const lines = stats.locationMap.get(currentUri.fsPath);
             if (lines) {
                 setLinesHeat(lines, stats.overallTotal);
             }

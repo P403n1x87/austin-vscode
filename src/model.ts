@@ -7,8 +7,36 @@ import './utils/io';
 import { isAbsolute } from 'path';
 import { Readable } from 'stream';
 import { readHead } from './utils/io';
-import { parseMojo } from './utils/mojo';
+import { MojoParser } from './utils/mojo';
+import { AustinRuntimeSettings } from './settings';
 
+
+export class AustinSample {
+    public pid: number;
+    public tid: string;
+    public stack: FrameObject[];
+    public metrics: number[];
+    public idle: boolean = false;
+    public gc: boolean = false;
+
+    public constructor(pid: number, tid: string, stack: FrameObject[], metrics: number[], idle: boolean = false, gc: boolean = false) {
+        this.pid = pid;
+        this.tid = tid;
+        this.stack = stack;
+        this.metrics = metrics;
+        this.idle = idle;
+        this.gc = gc;
+    }
+
+    public static parse(sample: string): AustinSample {
+        let [pidTidFrames, metrics] = sample.rsplit(' ', 1);
+
+        let frames = pidTidFrames.split(';');
+        let pid = frames.shift()!;
+        let tid = frames.shift()!;
+        return new AustinSample(Number(pid), tid, frames.map(parseFrame), [Number(metrics)]);
+    }
+}
 
 export class TopStats {
     public scope: string | null = null;
@@ -27,12 +55,11 @@ export class TopStats {
     key() {
         return `${this.module}:${this.scope}`;
     }
-
 }
 
 export interface AustinStats {
     hierarchy: D3Hierarchy;
-    lineMap: Map<string, Map<number, [number, number]>>;
+    locationMap: Map<string, Map<string, [FrameObject, number, number]>>;
     callStack: TopStats;
     top: Map<string, TopStats>;
     overallTotal: number;
@@ -46,14 +73,14 @@ export class AustinStats implements AustinStats {
     private _afterCbs: ((stats: AustinStats) => void)[];
 
     public constructor() {
-        this.lineMap = new Map();
+        this.locationMap = new Map();
         this.overallTotal = 0;
         this.top = new Map();
         this.hierarchy = {
-            "name": "",
-            "value": 0,
-            "children": [],
-            "data": "root",
+            name: "",
+            value: 0,
+            children: [],
+            data: "root",
         };
         this.callStack = new TopStats();
         this._beforeCbs = [];
@@ -64,13 +91,13 @@ export class AustinStats implements AustinStats {
 
     clear() {
         this.top.clear();
-        this.lineMap.clear();
+        this.locationMap.clear();
         this.overallTotal = 0;
         this.hierarchy = {
-            "name": this.source!,
-            "value": 0,
-            "children": [],
-            "data": "root",
+            name: this.source!,
+            value: 0,
+            children: [],
+            data: "root",
         };
         this.callStack = new TopStats();
         this.metadata = new Map();
@@ -96,7 +123,7 @@ export class AustinStats implements AustinStats {
             }
             let topStats = stats.get(key)!;
             topStats.total += metric;
-            topStats.lines.add(fo.lineNumber);
+            topStats.lines.add(fo.line);
             if (caller && !topStats.callers.has(caller.key())) {
                 topStats.callers.set(caller.key(), caller);
             }
@@ -109,40 +136,45 @@ export class AustinStats implements AustinStats {
         stats.get(key)!.own += metric;
     }
 
-    private updateLineMap(frameList: FrameObject[], metric: number) {
+    private updateLineMap(frames: FrameObject[], metric: number) {
         let fo: FrameObject | undefined = undefined;
         let seenFrames = new Set<string>(); // Prevent inflating times (e.g. recursive functions)
-        let stats = this.lineMap;
-        frameList.forEach((fo) => {
-            if (seenFrames.has(`${fo.module}:${fo.lineNumber}`)) {
+        let stats = this.locationMap;
+
+        let key = (fo: FrameObject) => `${fo.module}:${fo.scope}:${fo.line}:${fo.lineEnd}:${fo.column}:${fo.columnEnd}`;
+
+        frames.forEach((fo) => {
+            let frameKey = key(fo);
+            if (seenFrames.has(frameKey)) {
                 return;
             }
-            seenFrames.add(`${fo.module}:${fo.lineNumber}`);
+            seenFrames.add(frameKey);
             if (!(stats.has(fo.module))) {
-                stats.set(fo.module, new Map<number, [number, number]>());
+                stats.set(fo.module, new Map<string, [FrameObject, number, number]>());
             }
             let module = stats.get(fo.module);
-            if (!(module?.has(fo.lineNumber))) {
-                module?.set(fo.lineNumber, [0, 0]);
+            if (!(module?.has(frameKey))) {
+                module?.set(frameKey, [fo, 0, 0]);
             }
             let own: number, total: number;
-            [own, total] = module?.get(fo.lineNumber)!;
+            [fo, own, total] = module?.get(frameKey)!;
             total += metric;
-            module?.set(fo.lineNumber, [own, total]);
+            module?.set(frameKey, [fo, own, total]);
         });
 
         // Set own time to the top of the stack
-        if (frameList.length > 0) {
-            fo = frameList[frameList.length - 1];
+        if (frames.length > 0) {
+            fo = frames[frames.length - 1];
+            let frameKey = key(fo);
             let module = stats.get(fo.module);
             let own: number, total: number;
-            [own, total] = module?.get(fo.lineNumber)!;
+            [fo, own, total] = module?.get(frameKey)!;
             own += metric;
-            module?.set(fo.lineNumber, [own, total]);
+            module?.set(frameKey, [fo, own, total]);
         }
     }
 
-    private updateHierarchy(frameList: FrameObject[], metric: number) {
+    private updateHierarchy(pid: number, tid: string, frameList: FrameObject[], metric: number) {
         let stats = this.hierarchy;
         stats.value += metric;
 
@@ -156,29 +188,47 @@ export class AustinStats implements AustinStats {
             }
             const newContainer: D3Hierarchy[] = [];
             container.push({
-                "name": name,
-                "value": metric,
+                name: name,
+                value: metric,
                 children: newContainer,
-                "data": newDataFactory(frame),
+                data: newDataFactory(frame),
             });
             return newContainer;
         };
 
-        let container = stats.children;
+        let getGroupContainer = (key: string, container: D3Hierarchy[]) => {
+            for (let e of container) {
+                if (e.name === key) {
+                    e.value += metric;
+                    return e.children;
+                }
+            }
+            const newContainer: D3Hierarchy[] = [];
+            container.push({
+                name: key,
+                value: metric,
+                children: newContainer,
+                data: {},
+            });
+            return newContainer;
+        };
+
+        let container = getGroupContainer(`Thread ${tid}`, getGroupContainer(`Processs ${pid}`, stats.children));
+
         frameList.forEach((fo) => {
             if (false) { // TODO: Consider whether to re-enable per-line flamegraphs or not.
                 container = updateContainer(
                     container,
                     fo,
-                    (fo) => { return fo.lineNumber ? `${fo.scope} (${fo.module})` : fo.scope; },
+                    (fo) => { return fo.line ? `${fo.scope} (${fo.module})` : fo.scope; },
                     (fo) => { return { "file": fo.module, "source": this.source }; }
                 );
-                if (fo.lineNumber) {
+                if (fo.line) {
                     container = updateContainer(
                         container,
                         fo,
-                        (fo) => { return `${fo.lineNumber}`; },
-                        (fo) => { return { "file": fo.module, "line": fo.lineNumber, "source": this.source }; }
+                        (fo) => { return `${fo.line}`; },
+                        (fo) => { return { "file": fo.module, "line": fo.line, "source": this.source }; }
                     );
                 };
             }
@@ -186,8 +236,15 @@ export class AustinStats implements AustinStats {
                 container = updateContainer(
                     container,
                     fo,
-                    (fo) => { return fo.scope; /*fo.module && fo.lineNumber ? `${fo.scope} (${fo.module})` : fo.scope;*/ },
-                    (fo) => { return { "file": fo.module, "name": fo.scope, "line": fo.lineNumber, "source": this.source }; }
+                    (fo) => { return fo.scope; /*fo.module && fo.line ? `${fo.scope} (${fo.module})` : fo.scope;*/ },
+                    (fo) => {
+                        return {
+                            file: fo.module,
+                            name: fo.scope,
+                            line: fo.line,
+                            source: this.source
+                        };
+                    }
                 );
             }
         });
@@ -198,31 +255,23 @@ export class AustinStats implements AustinStats {
         frameList.forEach((fo) => {
             let key = `${fo.module}:${fo.scope}`;
             let callee = stats.callees.getDefault(key, () => new TopStats(fo.scope, fo.module));
-            callee.lines.add(fo.lineNumber);
+            callee.lines.add(fo.line);
             // stats?.total += metric;
             stats = callee;
         });
     }
 
-    public update(sample: string) {
-        if (sample.startsWith('# ') || sample.length === 0) {
-            let [key, value] = sample.slice(2).split(": ");
-            this.metadata.set(key, value);
-            return;
-        }
+    public setMetadata(key: string, value: string) {
+        this.metadata.set(key, value);
+    }
 
-        let frames: string, metrics: string;
-        [frames, metrics] = sample.rsplit(' ', 1);
-        const metric = Number(metrics);  // TODO: Assuming metrics is a single number
+    public update(pid: number, tid: string, frames: FrameObject[], metric: number) {
         this.overallTotal += metric;
 
-        let callStack = frames.split(';');
-        let frameList: FrameObject[] = callStack.map(parseFrame);
-
-        this.updateLineMap(frameList.slice(2), metric);
-        this.updateTop(frameList.slice(2), metric);
-        this.updateHierarchy(frameList, metric);
-        this.updateCallStack(frameList, metric);
+        this.updateLineMap(frames, metric);
+        this.updateTop(frames, metric);
+        this.updateHierarchy(pid, tid, frames, metric);
+        this.updateCallStack(frames, metric);
     }
 
     public registerBeforeCallback(cb: () => void) {
@@ -239,16 +288,17 @@ export class AustinStats implements AustinStats {
         this._afterCbs.forEach((cb) => cb(this));
     }
 
-    public readFromString(str: string, fileName: string) {
-        this.source = fileName;
-        this.clear();
+    public readFromBuffer(buffer: Buffer, fileName: string) {
+        if (AustinRuntimeSettings.get().settings.binaryMode) {
+            this.readFromMojoStream(buffer.values(), fileName);
+        } else {
+            let stream = new Readable();
 
-        let lines = str.split(/(?:\r\n|\r|\n)/g);
-        lines.forEach((line) => {
-            this.update(line);
-        });
+            stream.push(buffer.toString());
+            stream.push(null);
 
-        this.finalize();
+            this.readFromStream(stream, fileName);
+        }
     }
 
     public readFromStream(stream: Readable, fileName: string) {
@@ -261,17 +311,39 @@ export class AustinStats implements AustinStats {
 
         this._beforeCbs.forEach(cb => cb());
 
-        readInterface.on("line", this.update.bind(this));
+        readInterface.on("line", (line) => {
+            if (line.length === 0) {
+                return;
+            }
+
+            if (line.startsWith("#")) {
+                let [key, value] = line.substring(2).split(": ", 2);
+                this.setMetadata(key, value);
+                return;
+            }
+
+            let [pidTidFrames, metric] = line.rsplit(" ", 1);
+            let frames = pidTidFrames.split(";");
+            let pid = frames.shift()!.substring(1);
+            let tid = frames.shift()!.substring(1);
+            this.update(Number(pid), tid, frames.map(parseFrame), Number(metric));
+        });
 
         readInterface.on("close", this.finalize.bind(this));
     }
 
-    public readFromMojo(fileName: string) {
+    readFromMojoStream(bytes: IterableIterator<number>, fileName: string) {
         this.source = fileName;
         this.clear();
 
         this._beforeCbs.forEach(cb => cb());
 
+        new MojoParser(bytes).parseInto(this);
+
+        this.finalize();
+    }
+
+    public readFromMojo(fileName: string) {
         readFile(fileName, (err, data) => {
             if (err) {
                 vscode.window.showErrorMessage(`Error reading file: ${err}`);
@@ -279,9 +351,7 @@ export class AustinStats implements AustinStats {
                 return;
             }
 
-            parseMojo(data.values(), this);
-
-            this.finalize();
+            this.readFromMojoStream(data.values(), fileName);
         });
     }
 
@@ -312,10 +382,13 @@ export function absolutePath(path: string) {
 }
 
 
-interface FrameObject {
-    scope: string;
-    lineNumber: number;
+export interface FrameObject {
     module: string;
+    scope: string;
+    line: number;
+    lineEnd?: number;
+    column?: number;
+    columnEnd?: number;
 };
 
 
@@ -323,7 +396,11 @@ function parseFrame(frame: string): FrameObject {
     let module: string, scope: string, line: string;
     [module, scope, line] = frame.rsplit(":", 2);
 
-    return { "scope": scope, "lineNumber": Number(line), "module": absolutePath(module) };
+    return {
+        scope: scope,
+        line: Number(line),
+        module: absolutePath(module),
+    };
 }
 
 

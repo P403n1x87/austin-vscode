@@ -3,7 +3,7 @@
   "displayName": "Austin VS Code",
   "publisher": "p403n1x87",
   "description": "Austin extension for VS Code",
-  "version": "0.11.3",
+  "version": "0.12.0",
   "engines": {
     "vscode": "^1.57.0"
   },
@@ -55,6 +55,11 @@
             "Estimate CPU time"
           ],
           "default": "Wall time"
+        },
+        "austin.binaryMode": {
+          "description": "Binary mode (MOJO output)",
+          "type": "boolean",
+          "default": false
         }
       }
     },

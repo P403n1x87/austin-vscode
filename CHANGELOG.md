@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.12.0]
+
+- Added support for MOJO version 2 and column-level heat decorations.
+
 ## [0.11.3]
 
 - Fix extension packaging issue

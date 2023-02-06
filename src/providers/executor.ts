@@ -11,7 +11,7 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
   stderr: string | undefined;
   stdout: string | undefined;
   result: number = 0;
-  buffer: string = "";
+  buffer: Buffer = Buffer.alloc(0);
 
   constructor(
     private command: AustinCommandArguments,
@@ -30,9 +30,15 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
 
   private showStats() {
     clearDecorations();
-    this.stats.readFromString(this.buffer, this.fileName || "");
+    try {
+      this.stats.readFromBuffer(this.buffer, this.fileName || "");
+    } catch (e) {
+      let message = (e instanceof Error) ? e.message : e;
+      vscode.window.showErrorMessage(`Failed to parse stats from ${this.fileName}: ${message}`);
+      return;
+    }
     if (this.fileName) {
-      const lines = this.stats.lineMap.get(this.fileName);
+      const lines = this.stats.locationMap.get(this.fileName);
       if (lines) {
         setLinesHeat(lines, this.stats.overallTotal);
       }
@@ -55,7 +61,7 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
         this.writeEmitter.fire(err.message);
       });
       this.austinProcess.stdout!.on("data", (data) => {
-        this.buffer += data.toString();
+        this.buffer = Buffer.concat([this.buffer, data]);
       });
 
       this.austinProcess.stderr!.on("data", (data) => {

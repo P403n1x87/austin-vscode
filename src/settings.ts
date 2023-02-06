@@ -18,11 +18,13 @@ export class AustinRuntimeSettings {
         }
         const austinInterval: number = AustinRuntimeSettings.config.get<number>("interval", DEFAULT_INTERVAL);
         const austinMode: AustinMode = AustinRuntimeSettings.config.get("mode", DEFAULT_MODE);
+        const austinBinaryMode: boolean = AustinRuntimeSettings.config.get("binaryMode", false);
 
         this.settings = {
             path: austinPath,
             mode: austinMode,
-            interval: austinInterval
+            interval: austinInterval,
+            binaryMode: austinBinaryMode
         };
     }
 
@@ -54,6 +56,14 @@ export class AustinRuntimeSettings {
 
     public static setMode(newMode: AustinMode) {
         AustinRuntimeSettings.config.update("mode", newMode);
+    }
+
+    public static getBinaryMode(): boolean {
+        return AustinRuntimeSettings.get().settings.binaryMode;
+    }
+
+    public static setBinaryMode(newBinaryMode: boolean) {
+        AustinRuntimeSettings.config.update("binaryMode", newBinaryMode);
     }
 
 }

@@ -1,5 +1,4 @@
-import * as vscode from 'vscode';
-import { AustinStats } from "../model";
+import { AustinStats, FrameObject } from "../model";
 
 class IteratorDone extends Error {
     constructor() {
@@ -12,45 +11,6 @@ function ord(c: string) {
     return c.charCodeAt(0);
 }
 
-function consume(mojo: IterableIterator<number>) {
-    let next = mojo.next();
-    if (next.done) {
-        throw new IteratorDone();
-    }
-    return next.value;
-}
-
-/* MOJO Data Types */
-
-function consumeVarInt(mojo: IterableIterator<number>): bigint {
-    let n: bigint = 0n;
-    let s = 6n;
-    let b = BigInt(consume(mojo));
-    const sign = (b & 0x40n);
-
-    n |= (b & 0x3Fn);
-    while (b & 0x80n) {
-        b = BigInt(consume(mojo));
-        n |= ((b & 0x7Fn) << s);
-        s += 7n;
-    }
-
-    return sign ? -n : n;
-}
-
-function consumeString(mojo: IterableIterator<number>): string {
-    let bs = [];
-
-    while (true) {
-        const b = consume(mojo);
-        if (b === 0) {
-            break;
-        }
-        bs.push(b);
-    }
-
-    return String.fromCharCode(...bs);
-}
 
 /* MOJO Events */
 
@@ -69,185 +29,235 @@ const MOJO_EVENT = Object.freeze({
     "stringReference": 12,
 });
 
-function consumeHeader(mojo: IterableIterator<number>): bigint {
-    if (consume(mojo) !== ord('M') || consume(mojo) !== ord('O') || consume(mojo) !== ord('J')) {
-        throw new Error("Invalid header");
-    }
-    return consumeVarInt(mojo);
-}
-
-function consumeMetadata(mojo: IterableIterator<number>) {
-    return [consumeString(mojo), consumeString(mojo)];
-}
-
-function consumeStack(mojo: IterableIterator<number>) {
-    let pid = consumeVarInt(mojo);
-    let tid = consumeString(mojo);
-
-    return [pid.toString(), tid];
-}
-
 interface FrameData {
     key: bigint;
-    frame: string;
+    frame: FrameObject;
 }
 
-function consumeFrame(mojo: IterableIterator<number>, stringRefs: Map<string, string>, pid: string): FrameData {
-    let key = consumeVarInt(mojo);
-    let filenameKey = consumeVarInt(mojo);
-    let scopeKey = consumeVarInt(mojo);
-    let line = consumeVarInt(mojo);
 
-    let filename = stringRefs.get(`${pid}:${filenameKey}`);
-    let scope = (scopeKey === 1n) ? "<unknown>" : stringRefs.get(`${pid}:${scopeKey}`);
+function specialFrame(label: string): FrameObject {
+    return { scope: label, module: "", line: 0 };
+}
 
-    if (filename === undefined || scope === undefined) {
-        throw new Error("Invalid string references in frame event");
+
+export class MojoParser {
+    private version: bigint;
+    private mojo: IterableIterator<number>;
+
+    constructor(mojo: IterableIterator<number>) {
+        this.mojo = mojo;
+
+        this.version = this.consumeHeader();
     }
 
-    return { "key": key, "frame": `${filename}:${scope}:${line}` };
-}
-
-function consumeKernel(mojo: IterableIterator<number>) {
-    return `;kernel:${consumeString(mojo)}:0`;
-}
-
-function finalizeStack(stack: string, time: bigint | null, memory: bigint | null, idle: boolean, gc: boolean, full: boolean): string {
-    if (gc) {
-        stack += ";:GC:";
-    }
-
-    if (full) {
-        return `${stack} ${time}:${idle}:${memory}`;
-    }
-
-    let metric = time !== null ? time : memory;
-
-    return `${stack} ${metric}`;
-}
-
-export function parseMojo(mojo: IterableIterator<number>, stats: AustinStats) {
-    let metadata = new Map<string, string>();
-    let frameRefs = new Map<string, string>();
-    let stringRefs = new Map<string, string>();
-
-    let mojoVersion = consumeHeader(mojo);
-
-    let currentPid = null;
-    let currentTid = null;
-    let currentStack = null;
-    let currentTimeMetric = null;
-    let currentMemoryMetric = null;
-    let currentIdle = false;
-    let currentGC = false;
-
-    try {
-        while (true) {
-            switch (consume(mojo)) {
-                case MOJO_EVENT.metadata:
-                    let [k, v] = consumeMetadata(mojo);
-                    metadata.set(k, v);
-                    stats.update(`# ${k}: ${v}`);
-                    break;
-
-                case MOJO_EVENT.stack:
-                    // Finish the previous stack and update the stats
-                    if (currentStack !== null) {
-                        stats.update(
-                            finalizeStack(
-                                currentStack,
-                                currentTimeMetric,
-                                currentMemoryMetric,
-                                currentIdle,
-                                currentGC,
-                                metadata.get("mode") === "full",
-                            )
-                        );
-                    }
-
-                    [currentPid, currentTid] = consumeStack(mojo);
-                    currentStack = `P${currentPid};T${Number("0x" + currentTid)}`;
-                    currentTimeMetric = null;
-                    currentMemoryMetric = null;
-                    currentIdle = false;
-                    currentGC = false;
-
-                    break;
-
-                case MOJO_EVENT.frame:
-                    if (currentPid === null) {
-                        throw new Error("Frame event before stack event");
-                    }
-                    let frameData = consumeFrame(mojo, stringRefs, currentPid);
-                    frameRefs.set(`${currentPid}:${frameData.key}`, frameData.frame);
-                    break;
-
-                case MOJO_EVENT.invalidFrame:
-                    currentStack += ";:INVALID:";
-                    break;
-
-                case MOJO_EVENT.frameReference:
-                    let key = `${currentPid}:${consumeVarInt(mojo)}`;
-                    currentStack += `;${frameRefs.get(key)}`;
-                    break;
-
-                case MOJO_EVENT.kernelFrame:
-                    currentStack += consumeKernel(mojo);
-                    break;
-
-                case MOJO_EVENT.gc:
-                    currentGC = true;
-                    break;
-
-                case MOJO_EVENT.idle:
-                    currentIdle = true;
-                    break;
-
-                case MOJO_EVENT.time:
-                    currentTimeMetric = consumeVarInt(mojo);
-                    break;
-
-                case MOJO_EVENT.memory:
-                    currentMemoryMetric = consumeVarInt(mojo);
-                    break;
-
-                case MOJO_EVENT.string:
-                    let stringKey = consumeVarInt(mojo);
-                    let stringValue = consumeString(mojo);
-                    stringRefs.set(`${currentPid}:${stringKey}`, stringValue);
-                    break;
-
-                case MOJO_EVENT.stringReference:
-                    let string = stringRefs.get(`${currentPid}:${consumeVarInt(mojo)}`);
-                    if (string === undefined) {
-                        throw new Error("Invalid string reference");
-                    }
-                    currentStack += string;
-                    break;
-
-                default:
-                    console.error("Received unknown MOJO event");
-                    vscode.window.showErrorMessage("Invalid MOJO file");
-            }
+    private consume() {
+        let next = this.mojo.next();
+        if (next.done) {
+            throw new IteratorDone();
         }
-    } catch (e) {
-        if (e instanceof IteratorDone) {
-            // Finish the last stack and update the stats
-            if (currentStack !== null) {
-                stats.update(
-                    finalizeStack(
-                        currentStack,
-                        currentTimeMetric,
-                        currentMemoryMetric,
-                        currentIdle,
-                        currentGC,
-                        metadata.get("mode") === "full",
-                    )
-                );
+        return next.value;
+    }
+
+    /* MOJO Data Types */
+
+    private consumeVarInt(): bigint {
+        let n: bigint = 0n;
+        let s = 6n;
+        let b = BigInt(this.consume());
+        const sign = (b & 0x40n);
+
+        n |= (b & 0x3Fn);
+        while (b & 0x80n) {
+            b = BigInt(this.consume());
+            n |= ((b & 0x7Fn) << s);
+            s += 7n;
+        }
+
+        return sign ? -n : n;
+    }
+
+    private consumeString(): string {
+        let bs = [];
+
+        while (true) {
+            const b = this.consume();
+            if (b === 0) {
+                break;
             }
-        } else {
-            let message = (e instanceof Error) ? e.message : e;
-            vscode.window.showErrorMessage(`Failed to parse the MOJO file ${stats.source}: ${message}`);
+            bs.push(b);
+        }
+
+        return String.fromCharCode(...bs);
+    }
+
+
+    private consumeHeader(): bigint {
+        if (this.consume() !== ord('M') || this.consume() !== ord('O') || this.consume() !== ord('J')) {
+            throw new Error("Invalid header");
+        }
+        return this.consumeVarInt();
+    }
+
+    private consumeMetadata() {
+        return [this.consumeString(), this.consumeString()];
+    }
+
+    private consumeStack() {
+        let pid = this.consumeVarInt();
+        let tid = this.consumeString();
+
+        return [pid.toString(), tid];
+    }
+
+    private consumeFrame(stringRefs: Map<string, string>, pid: string): FrameData {
+        let key = this.consumeVarInt();
+
+        let filenameKey = this.consumeVarInt();
+        let scopeKey = this.consumeVarInt();
+
+        let line = this.consumeVarInt();
+        let lineEnd = 0n;
+        let column = 0n;
+        let columnEnd = 0n;
+
+        if (this.version >= 2n) {
+            lineEnd = this.consumeVarInt();
+            column = this.consumeVarInt();
+            columnEnd = this.consumeVarInt();
+        }
+
+        let filename = stringRefs.get(`${pid}:${filenameKey}`);
+        let scope = (scopeKey === 1n) ? "<unknown>" : stringRefs.get(`${pid}:${scopeKey}`);
+
+        if (filename === undefined || scope === undefined) {
+            throw new Error("Invalid string references in frame event");
+        }
+
+        return {
+            key: key,
+            frame: {
+                module: filename,
+                scope: scope,
+                line: Number(line),
+                lineEnd: Number(lineEnd),
+                column: Number(column),
+                columnEnd: Number(columnEnd),
+            }
+        };
+    }
+
+    private consumeKernel(): FrameObject {
+        return {
+            module: "kernel",
+            scope: this.consumeString(),
+            line: 0,
+        };
+    }
+
+    public parseInto(stats: AustinStats) {
+        let metadata = new Map<string, string>();
+        let frameRefs = new Map<string, FrameObject>();
+        let stringRefs = new Map<string, string>();
+
+        let currentPid = null;
+        let currentTid = null;
+        let currentStack = new Array<FrameObject>();
+        let currentTimeMetric = null;
+        let currentMemoryMetric = null;
+        let currentIdle = false;
+        let currentGC = false;
+
+        try {
+            while (true) {
+                switch (this.consume()) {
+                    case MOJO_EVENT.metadata:
+                        let [k, v] = this.consumeMetadata();
+                        metadata.set(k, v);
+                        stats.setMetadata(k, v);
+                        break;
+
+                    case MOJO_EVENT.stack:
+                        // Finish the previous stack and update the stats
+                        if (currentPid !== null) {
+                            stats.update(
+                                Number(currentPid),
+                                currentTid!,
+                                currentStack,
+                                Number(currentTimeMetric!),
+                            );
+                        }
+
+                        [currentPid, currentTid] = this.consumeStack();
+                        currentStack = [];
+                        currentTimeMetric = null;
+                        currentMemoryMetric = null;
+                        currentIdle = false;
+                        currentGC = false;
+
+                        break;
+
+                    case MOJO_EVENT.frame:
+                        if (currentPid === null) {
+                            throw new Error("Frame event before stack event");
+                        }
+                        let frameData = this.consumeFrame(stringRefs, currentPid);
+                        frameRefs.set(`${currentPid}:${frameData.key}`, frameData.frame);
+                        break;
+
+                    case MOJO_EVENT.invalidFrame:
+                        currentStack.push(specialFrame("INVALID"));
+                        break;
+
+                    case MOJO_EVENT.frameReference:
+                        let key = `${currentPid}:${this.consumeVarInt()}`;
+                        currentStack.push(frameRefs.get(key)!);
+                        break;
+
+                    case MOJO_EVENT.kernelFrame:
+                        currentStack.push(this.consumeKernel());
+                        break;
+
+                    case MOJO_EVENT.gc:
+                        currentStack.push(specialFrame("GC"));
+                        break;
+
+                    case MOJO_EVENT.idle:
+                        currentIdle = true;
+                        break;
+
+                    case MOJO_EVENT.time:
+                        currentTimeMetric = this.consumeVarInt();
+                        break;
+
+                    case MOJO_EVENT.memory:
+                        currentMemoryMetric = this.consumeVarInt();
+                        break;
+
+                    case MOJO_EVENT.string:
+                        let stringKey = this.consumeVarInt();
+                        let stringValue = this.consumeString();
+                        stringRefs.set(`${currentPid}:${stringKey}`, stringValue);
+                        break;
+
+                    default:
+                        throw new Error("Received unknown MOJO event");
+                }
+            }
+        } catch (e) {
+            if (e instanceof IteratorDone) {
+                // Finish the last stack and update the stats
+                if (currentPid !== null) {
+                    stats.update(
+                        Number(currentPid),
+                        currentTid!,
+                        currentStack,
+                        Number(currentTimeMetric!),
+                    );
+                }
+                return;
+            }
+
+            throw e;
         }
     }
 }

@@ -44,7 +44,13 @@ export class AustinController {
                 if (currentUri?.scheme === "file") {
                     const austinFile = currentUri.fsPath;
                     this.output.appendLine(`Loading Austin File ${austinFile}`);
-                    this.stats.readFromFile(austinFile);
+                    try {
+                        this.stats.readFromFile(austinFile);
+                    } catch (e) {
+                        let message = (e instanceof Error) ? e.message : e;
+                        vscode.window.showErrorMessage(`Failed to parse stats from ${austinFile}: ${message}`);
+                        return;
+                    }
                 }
                 this.output.appendLine(`Completed Loading Austin File.`);
             }
@@ -59,7 +65,7 @@ export class AustinController {
                     editor.document.lineAt(line - 1).range.start,
                     editor.document.lineAt(line - 1).range.end
                 ));
-                const lines = this.stats.lineMap.get(module);
+                const lines = this.stats.locationMap.get(module);
                 if (lines) {
                     setLinesHeat(lines, this.stats.overallTotal);
                 }
