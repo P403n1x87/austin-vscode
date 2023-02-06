@@ -48,7 +48,6 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
     this.writeEmitter.fire(`Starting Profiler in ${this.cwd}.\r\n`);
     this.austinProcess = spawn(this.command.cmd, this.command.args, {
-      shell: true,
       cwd: this.cwd,
     }); // NOSONAR
     const args = this.command.args.join(' ');
