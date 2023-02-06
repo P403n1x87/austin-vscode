@@ -250,13 +250,14 @@ export class AustinStats implements AustinStats {
         });
     }
 
-    private updateCallStack(frameList: FrameObject[], metric: number) {
-        let stats: TopStats = this.callStack!;
+    private updateCallStack(pid: number, tid: string, frameList: FrameObject[]) {
+        let stats = this.callStack.callees.getDefault(pid.toString(), () => new TopStats(`Process ${pid}`, ""))
+            .callees.getDefault(tid, () => new TopStats(`Thread ${tid}`, ""));
+
         frameList.forEach((fo) => {
             let key = `${fo.module}:${fo.scope}`;
             let callee = stats.callees.getDefault(key, () => new TopStats(fo.scope, fo.module));
             callee.lines.add(fo.line);
-            // stats?.total += metric;
             stats = callee;
         });
     }
@@ -271,7 +272,7 @@ export class AustinStats implements AustinStats {
         this.updateLineMap(frames, metric);
         this.updateTop(frames, metric);
         this.updateHierarchy(pid, tid, frames, metric);
-        this.updateCallStack(frames, metric);
+        this.updateCallStack(pid, tid, frames);
     }
 
     public registerBeforeCallback(cb: () => void) {
