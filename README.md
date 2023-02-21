@@ -120,6 +120,16 @@ The extension also adds two interactive tree views in the side bar to explore
 the sampled call stack and the top functions. Click on the Austin logo in the
 activity bar to reveal them.
 
+
+### Expression-level heat maps
+
+To enable support for column-level location information, ensure that the Austin
+extension is set up to use the binary mode in the extension settings. Note that
+this requires at least the version 3.5 of Austin to work. Binary mode itself
+only requires Austin 3.4 to work. Earlier Austin versions don't support binary
+mode and the extension won't work if in binary mode.
+
+
 <!-- To toggle line numbers, press <kbd>L</kbd>. This could be useful when the same
 Python module has multiple methods with the same names (e.g. `__init__`), since
 the function names collected by Austin are not fully qualified. -->
