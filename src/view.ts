@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { FrameObject } from './model';
+import { AustinRuntimeSettings } from './settings';
+import { AustinMode } from './types';
 
 
 let decorators: vscode.TextEditorDecorationType[] = [];
@@ -14,8 +16,11 @@ export function clearDecorations() {
 function setLineHeat(frame: FrameObject, own: number, total: number, overallTotal: number, localTotal: number) {
     const editor = vscode.window.activeTextEditor;
     if (editor !== undefined) {
-        const color: string = `rgba(255, 64, 64, ${own / localTotal})`;
-        let columnDelta = (frame.columnEnd || 0) - (frame.column || 0);
+        const opacity = own / localTotal;
+        const color: string = AustinRuntimeSettings.get().settings.mode === AustinMode.CpuTime
+            ? `rgba(255, 64, 64, ${opacity})`
+            : `rgba(192, 192, 64, ${opacity})`;
+        const columnDelta = (frame.columnEnd || 0) - (frame.column || 0);
         const lineDecorator = vscode.window.createTextEditorDecorationType({
             backgroundColor: color,
             overviewRulerColor: color,
