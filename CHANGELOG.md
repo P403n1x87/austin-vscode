@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.13.0]
+
+- Extended colour-coding to source heat maps.
+
 ## [0.12.0]
 
 - Added support for MOJO version 2 and column-level heat decorations.
