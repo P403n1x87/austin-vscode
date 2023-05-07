@@ -22,7 +22,18 @@ Austin binary in the settings.
 ## Usage
 
 There are two ways of executing Austin from VS Code. Either using a configured
- task, or a one-off execution.
+task, or a one-off execution.
+
+> **NOTE** MacOS users should consider adding a rule for Austin to their
+> `sudoers` file. This will allow you to run `sudo austin ...` without having to
+> type your user password. This is required if you want to run Austin through
+> the extension tasks. To add a rule for Austin to the `sudoers` file, run `sudo
+> visudo` and add
+> ~~~
+> <USER>        ALL = (root) NOPASSWD: <PATH_TO_AUSTIN>
+> ~~~
+> at the end, replacing `<USER>` and `<PATH_TO_AUSTIN>` with your user name and
+> the path to the Austin binary respectively.
 
 ### Profiling with tasks
 
