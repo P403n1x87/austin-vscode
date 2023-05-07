@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.14.0]
+
+- Added setting option to select the type of line stats to display on the heat
+  map to show percent, absolute or both values.
+
 ## [0.13.1]
 
 - Fix the line heat color to reflect the profile type when data is loaded from

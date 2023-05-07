@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { AustinStats, FrameObject } from './model';
+import { AustinRuntimeSettings } from './settings';
+import { AustinLineStats } from './types';
 
 
 let decorators: vscode.TextEditorDecorationType[] = [];
@@ -10,6 +12,21 @@ export function clearDecorations() {
     decorators = [];
 }
 
+
+function formatTime(microseconds: number) {
+    // Convert microseconds to a string, choosing units that are the most
+    // appropriate for the magnitude of the time.
+    if (microseconds < 1000) {
+        return microseconds.toFixed(0) + "μs";
+    }
+    if (microseconds < 1000 * 1000) {
+        return (microseconds / 1000).toFixed(2) + "ms";
+    }
+    if (microseconds < 1000 * 1000 * 1000) {
+        return (microseconds / (1000 * 1000)).toFixed(2) + "s";
+    }
+    return (microseconds / (1000 * 1000 * 1000)).toFixed(2) + "m";
+}
 
 function setLineHeat(frame: FrameObject, own: number, total: number, overallTotal: number, localTotal: number, mode: string) {
     const editor = vscode.window.activeTextEditor;
@@ -44,22 +61,49 @@ function setLineHeat(frame: FrameObject, own: number, total: number, overallTota
 
 function setLinesStats(lineStats: Map<number, [number, number]>, overallTotal: number, localTotal: number) {
     const editor = vscode.window.activeTextEditor;
+    const lineStatsType = AustinRuntimeSettings.get().settings.lineStats;
+
     if (editor === undefined) {
         return;
     }
 
     lineStats.forEach((v, k) => {
         let [own, total] = v;
+        if (total === 0) {
+            return;
+        }
+
+        let ownString = null;
+        let totalString = null;
+
         const ownp = (own * 100 / overallTotal).toFixed(2);
         const totalp = (total * 100 / overallTotal).toFixed(2);
 
-        if (totalp === "0.00") {
-            return;
+        switch (lineStatsType) {
+            case AustinLineStats.PERCENT:
+                if (totalp === "0.00") {
+                    return;
+                }
+
+                ownString = `${ownp}%`;
+                totalString = `${totalp}%`;
+
+                break;
+
+            case AustinLineStats.ABSOLUTE:
+                ownString = formatTime(own);
+                totalString = formatTime(total);
+
+                break;
+
+            case AustinLineStats.BOTH:
+                ownString = `${formatTime(own)} (${ownp}%)`;
+                totalString = `${formatTime(total)} (${totalp}%)`;
         }
 
         const lineDecorator = vscode.window.createTextEditorDecorationType({
             after: {
-                contentText: `    own: ${ownp}%, total: ${totalp}%`,
+                contentText: `    own: ${ownString}, total: ${totalString}`,
                 color: "rgb(128,128,128)",
                 margin: "8px",
             },
