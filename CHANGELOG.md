@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.13.1]
+
+- Fix the line heat color to reflect the profile type when data is loaded from
+  a sample file.
+
 ## [0.13.0]
 
 - Extended colour-coding to source heat maps.

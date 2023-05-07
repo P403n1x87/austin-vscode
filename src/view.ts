@@ -1,7 +1,5 @@
 import * as vscode from 'vscode';
-import { FrameObject } from './model';
-import { AustinRuntimeSettings } from './settings';
-import { AustinMode } from './types';
+import { AustinStats, FrameObject } from './model';
 
 
 let decorators: vscode.TextEditorDecorationType[] = [];
@@ -13,11 +11,11 @@ export function clearDecorations() {
 }
 
 
-function setLineHeat(frame: FrameObject, own: number, total: number, overallTotal: number, localTotal: number) {
+function setLineHeat(frame: FrameObject, own: number, total: number, overallTotal: number, localTotal: number, mode: string) {
     const editor = vscode.window.activeTextEditor;
     if (editor !== undefined) {
         const opacity = own / localTotal;
-        const color: string = AustinRuntimeSettings.get().settings.mode === AustinMode.CpuTime
+        const color: string = mode === "cpu"
             ? `rgba(255, 64, 64, ${opacity})`
             : `rgba(192, 192, 64, ${opacity})`;
         const columnDelta = (frame.columnEnd || 0) - (frame.column || 0);
@@ -83,16 +81,17 @@ function setLinesStats(lineStats: Map<number, [number, number]>, overallTotal: n
     });
 }
 
-export function setLinesHeat(locations: Map<string, [FrameObject, number, number]>, overallTotal: number) {
+export function setLinesHeat(locations: Map<string, [FrameObject, number, number]>, stats: AustinStats) {
     clearDecorations();
 
+    const overallTotal = stats.overallTotal;
     const localTotal = Array.from(locations.values()).map(v => v[1]).reduce((s, c) => s + c, 0);
     let lineStats = new Map<number, [number, number]>();
 
     locations.forEach((v, k) => {
         let [fo, own, total] = v;
 
-        setLineHeat(fo, own, total, overallTotal, localTotal);
+        setLineHeat(fo, own, total, overallTotal, localTotal, stats.metadata.getDefault("mode", () => "cpu"));
 
         for (let i = fo.line; i <= (fo.lineEnd ? fo.lineEnd : fo.line); i++) {
             if (lineStats.has(i)) {

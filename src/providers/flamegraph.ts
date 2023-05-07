@@ -113,7 +113,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         if (currentUri?.scheme === "file") {
             const lines = stats.locationMap.get(currentUri.fsPath);
             if (lines) {
-                setLinesHeat(lines, stats.overallTotal);
+                setLinesHeat(lines, stats);
             }
         }
     }

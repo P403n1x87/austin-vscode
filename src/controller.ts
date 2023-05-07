@@ -67,7 +67,7 @@ export class AustinController {
                 ));
                 const lines = this.stats.locationMap.get(module);
                 if (lines) {
-                    setLinesHeat(lines, this.stats.overallTotal);
+                    setLinesHeat(lines, this.stats);
                 }
             });
         });

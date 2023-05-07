@@ -40,7 +40,7 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
     if (this.fileName) {
       const lines = this.stats.locationMap.get(this.fileName);
       if (lines) {
-        setLinesHeat(lines, this.stats.overallTotal);
+        setLinesHeat(lines, this.stats);
       }
     }
   }
