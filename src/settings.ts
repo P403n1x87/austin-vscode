@@ -1,9 +1,10 @@
-import { AustinMode, AustinSettings } from "./types";
+import { AustinLineStats, AustinMode, AustinSettings } from "./types";
 import * as vscode from 'vscode';
 
 export const DEFAULT_PATH = "austin";
 export const DEFAULT_INTERVAL = 100;
 export const DEFAULT_MODE = AustinMode.WallTime;
+export const DEFAULT_LINE_STATS = AustinLineStats.PERCENT;
 
 export class AustinRuntimeSettings {
     private static config = vscode.workspace.getConfiguration('austin');
@@ -19,12 +20,14 @@ export class AustinRuntimeSettings {
         const austinInterval: number = AustinRuntimeSettings.config.get<number>("interval", DEFAULT_INTERVAL);
         const austinMode: AustinMode = AustinRuntimeSettings.config.get("mode", DEFAULT_MODE);
         const austinBinaryMode: boolean = AustinRuntimeSettings.config.get("binaryMode", false);
+        const austinLineStats: AustinLineStats = AustinRuntimeSettings.config.get("lineStats", DEFAULT_LINE_STATS);
 
         this.settings = {
             path: austinPath,
             mode: austinMode,
             interval: austinInterval,
-            binaryMode: austinBinaryMode
+            binaryMode: austinBinaryMode,
+            lineStats: austinLineStats
         };
     }
 
@@ -66,4 +69,11 @@ export class AustinRuntimeSettings {
         AustinRuntimeSettings.config.update("binaryMode", newBinaryMode);
     }
 
+    public static getLineStats(): AustinLineStats {
+        return AustinRuntimeSettings.get().settings.lineStats;
+    }
+
+    public static setLineStats(newLineStats: AustinLineStats) {
+        AustinRuntimeSettings.config.update("lineStats", newLineStats);
+    }
 }
