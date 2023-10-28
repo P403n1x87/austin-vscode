@@ -102,14 +102,15 @@ export class MojoParser {
         return [this.consumeString(), this.consumeString()];
     }
 
-    private consumeStack() {
+    private consumeStack(): [bigint, bigint, string] {
         let pid = this.consumeVarInt();
+        let iid = this.version >= 3n ? this.consumeVarInt() : 0n;
         let tid = this.consumeString();
 
-        return [pid.toString(), tid];
+        return [pid, iid, tid];
     }
 
-    private consumeFrame(stringRefs: Map<string, string>, pid: string): FrameData {
+    private consumeFrame(stringRefs: Map<string, string>, pid: bigint): FrameData {
         let key = this.consumeVarInt();
 
         let filenameKey = this.consumeVarInt();
@@ -159,8 +160,9 @@ export class MojoParser {
         let frameRefs = new Map<string, FrameObject>();
         let stringRefs = new Map<string, string>();
 
-        let currentPid = null;
-        let currentTid = null;
+        let currentPid: bigint | null = null;
+        let currentIid: bigint | null = null;
+        let currentTid: string | null = null;
         let currentStack = new Array<FrameObject>();
         let currentTimeMetric = null;
         let currentMemoryMetric = null;
@@ -181,13 +183,13 @@ export class MojoParser {
                         if (currentPid !== null) {
                             stats.update(
                                 Number(currentPid),
-                                currentTid!,
+                                `${currentIid}:${currentTid}`,
                                 currentStack,
                                 Number(currentTimeMetric!),
                             );
                         }
 
-                        [currentPid, currentTid] = this.consumeStack();
+                        [currentPid, currentIid, currentTid] = this.consumeStack();
                         currentStack = [];
                         currentTimeMetric = null;
                         currentMemoryMetric = null;
@@ -249,7 +251,7 @@ export class MojoParser {
                 if (currentPid !== null) {
                     stats.update(
                         Number(currentPid),
-                        currentTid!,
+                        `${currentIid}:${currentTid}`,
                         currentStack,
                         Number(currentTimeMetric!),
                     );
