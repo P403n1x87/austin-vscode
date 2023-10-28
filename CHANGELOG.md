@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.15.0]
+
+- Added support for MOJO version 3, used by Austin 3.6.
+
 ## [0.14.0]
 
 - Added setting option to select the type of line stats to display on the heat
