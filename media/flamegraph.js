@@ -155,8 +155,14 @@ function setMetadata(meta) {
             document.body.style.backgroundColor = "rgba(127, 127, 0, .15)";
             document.getElementById("header").style.backgroundColor = "rgba(192, 192, 64, .8)";
             break;
+        case "memory":
+            mode = "Memory Allocations Profile";
+            document.body.style.backgroundColor = "rgba(0, 127, 0, .15)";
+            document.getElementById("header").style.backgroundColor = "rgba(64, 192, 64, .8)";
+            break;
+
         default:
-            mode = "<unsupported profile mode>";
+            mode = "[unsupported profile mode]";
     }
     modeSpan.innerHTML = mode;
 }

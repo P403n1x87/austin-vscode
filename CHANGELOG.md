@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.16.0]
+
+- Added support for memory mode.
+
 ## [0.15.0]
 
 - Added support for MOJO version 3, used by Austin 3.6.
