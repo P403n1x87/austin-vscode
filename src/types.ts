@@ -2,7 +2,9 @@ export const enum AustinMode {
     // eslint-disable-next-line @typescript-eslint/naming-convention
     WallTime = "Wall time",
     // eslint-disable-next-line @typescript-eslint/naming-convention
-    CpuTime = "CPU time"
+    CpuTime = "CPU time",
+    // eslint-disable-next-line @typescript-eslint/naming-convention
+    Memory = "Memory"
 }
 
 export const enum AustinLineStats {

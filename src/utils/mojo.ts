@@ -168,6 +168,7 @@ export class MojoParser {
         let currentMemoryMetric = null;
         let currentIdle = false;
         let currentGC = false;
+        let mode: string | null = null;
 
         try {
             while (true) {
@@ -176,6 +177,9 @@ export class MojoParser {
                         let [k, v] = this.consumeMetadata();
                         metadata.set(k, v);
                         stats.setMetadata(k, v);
+                        if (k === "mode") {
+                            mode = v;
+                        }
                         break;
 
                     case MOJO_EVENT.stack:
@@ -185,7 +189,7 @@ export class MojoParser {
                                 Number(currentPid),
                                 `${currentIid}:${currentTid}`,
                                 currentStack,
-                                Number(currentTimeMetric!),
+                                Number(mode === "memory" ? currentMemoryMetric! : currentTimeMetric!),
                             );
                         }
 
@@ -253,7 +257,7 @@ export class MojoParser {
                         Number(currentPid),
                         `${currentIid}:${currentTid}`,
                         currentStack,
-                        Number(currentTimeMetric!),
+                        Number(mode === "memory" ? currentMemoryMetric! : currentTimeMetric!),
                     );
                 }
                 return;

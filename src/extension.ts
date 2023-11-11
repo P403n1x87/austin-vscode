@@ -105,7 +105,7 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand(austinModeStatusBarItem.command, () => {
 			// Show mode picker
 			vscode.window.showQuickPick(
-				["Wall time", "CPU time"],
+				["Wall time", "CPU time", "Memory"],
 				{
 					"title": "Pick Austin sampling mode",
 					"canPickMany": false

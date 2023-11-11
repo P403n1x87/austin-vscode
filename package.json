@@ -3,7 +3,7 @@
   "displayName": "Austin VS Code",
   "publisher": "p403n1x87",
   "description": "Austin extension for VS Code",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "engines": {
     "vscode": "^1.57.0"
   },
@@ -48,7 +48,8 @@
           "type": "string",
           "enum": [
             "Wall time",
-            "CPU time"
+            "CPU time",
+            "Memory"
           ],
           "enumDescriptions": [
             "Estimate wall-clock time",

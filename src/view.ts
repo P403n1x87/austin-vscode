@@ -28,13 +28,39 @@ function formatTime(microseconds: number) {
     return (microseconds / (1000 * 1000 * 1000)).toFixed(2) + "m";
 }
 
+function formatMemory(bytes: number) {
+    // Convert bytes to a string, choosing units that are the most
+    // appropriate for the magnitude of the memory.
+    if (bytes < 1024) {
+        return bytes.toFixed(0) + "B";
+    }
+    if (bytes < 1024 * 1024) {
+        return (bytes / 1024).toFixed(2) + "KB";
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+        return (bytes / (1024 * 1024)).toFixed(2) + "MB";
+    }
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + "GB";
+}
+
 function setLineHeat(frame: FrameObject, own: number, total: number, overallTotal: number, localTotal: number, mode: string) {
     const editor = vscode.window.activeTextEditor;
     if (editor !== undefined) {
         const opacity = own / localTotal;
-        const color: string = mode === "cpu"
-            ? `rgba(255, 64, 64, ${opacity})`
-            : `rgba(192, 192, 64, ${opacity})`;
+        var color: string | undefined = undefined;
+
+        switch (mode) {
+            case "cpu":
+                color = `rgba(255, 64, 64, ${opacity})`;
+                break;
+            case "wall":
+                color = `rgba(192, 192, 64, ${opacity})`;
+                break;
+            case "memory":
+                color = `rgba(64, 192, 64, ${opacity})`;
+                break;
+        }
+
         const columnDelta = (frame.columnEnd || 0) - (frame.column || 0);
         const lineDecorator = vscode.window.createTextEditorDecorationType({
             backgroundColor: color,
@@ -50,8 +76,8 @@ function setLineHeat(frame: FrameObject, own: number, total: number, overallTota
             )]);
         }
         else {
-            let start = new vscode.Position(frame.line - 1, frame.column! - 1);
-            let end = new vscode.Position(frame.lineEnd! - 1, frame.columnEnd! - 1);
+            let start = new vscode.Position(Math.max(frame.line - 1, 0), Math.max(frame.column! - 1, 0));
+            let end = new vscode.Position(Math.max(frame.lineEnd! - 1, 0), Math.max(frame.columnEnd! - 1, 0));
             editor.setDecorations(lineDecorator, [new vscode.Range(start, end)]);
         }
 
@@ -59,7 +85,7 @@ function setLineHeat(frame: FrameObject, own: number, total: number, overallTota
     }
 }
 
-function setLinesStats(lineStats: Map<number, [number, number]>, overallTotal: number, localTotal: number) {
+function setLinesStats(lineStats: Map<number, [number, number]>, overallTotal: number, localTotal: number, mode: string) {
     const editor = vscode.window.activeTextEditor;
     const lineStatsType = AustinRuntimeSettings.get().settings.lineStats;
 
@@ -79,6 +105,8 @@ function setLinesStats(lineStats: Map<number, [number, number]>, overallTotal: n
         const ownp = (own * 100 / overallTotal).toFixed(2);
         const totalp = (total * 100 / overallTotal).toFixed(2);
 
+        const formatter = mode === "memory" ? formatMemory : formatTime;
+
         switch (lineStatsType) {
             case AustinLineStats.PERCENT:
                 if (totalp === "0.00") {
@@ -91,14 +119,14 @@ function setLinesStats(lineStats: Map<number, [number, number]>, overallTotal: n
                 break;
 
             case AustinLineStats.ABSOLUTE:
-                ownString = formatTime(own);
-                totalString = formatTime(total);
+                ownString = formatter(own);
+                totalString = formatter(total);
 
                 break;
 
             case AustinLineStats.BOTH:
-                ownString = `${formatTime(own)} (${ownp}%)`;
-                totalString = `${formatTime(total)} (${totalp}%)`;
+                ownString = `${formatter(own)} (${ownp}%)`;
+                totalString = `${formatter(total)} (${totalp}%)`;
         }
 
         const lineDecorator = vscode.window.createTextEditorDecorationType({
@@ -131,11 +159,12 @@ export function setLinesHeat(locations: Map<string, [FrameObject, number, number
     const overallTotal = stats.overallTotal;
     const localTotal = Array.from(locations.values()).map(v => v[1]).reduce((s, c) => s + c, 0);
     let lineStats = new Map<number, [number, number]>();
+    let mode = stats.metadata.getDefault("mode", () => "cpu");
 
     locations.forEach((v, k) => {
         let [fo, own, total] = v;
 
-        setLineHeat(fo, own, total, overallTotal, localTotal, stats.metadata.getDefault("mode", () => "cpu"));
+        setLineHeat(fo, own, total, overallTotal, localTotal, mode);
 
         for (let i = fo.line; i <= (fo.lineEnd ? fo.lineEnd : fo.line); i++) {
             if (lineStats.has(i)) {
@@ -148,7 +177,7 @@ export function setLinesHeat(locations: Map<string, [FrameObject, number, number
         }
     });
 
-    setLinesStats(lineStats, overallTotal, localTotal);
+    setLinesStats(lineStats, overallTotal, localTotal, mode);
 }
 
 
