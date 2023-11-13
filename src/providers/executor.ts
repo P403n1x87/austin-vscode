@@ -6,6 +6,20 @@ import { ChildProcess, spawn } from "child_process";
 import { AustinStats } from "../model";
 import { clearDecorations, setLinesHeat } from "../view";
 
+function resolveArgs(args: string[]): string[] {
+  const resolvedArgs: string[] = [];
+  args.forEach((arg) => {
+    if (arg.indexOf("${workspaceFolder}") >= 0 && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length === 1) {
+      resolvedArgs.push(arg.replace("${workspaceFolder}", `"${vscode.workspace.workspaceFolders[0].uri.fsPath}"`));
+    } else if (arg.indexOf("${file}") >= 0 && vscode.window.activeTextEditor) {
+      resolvedArgs.push(arg.replace("${file}", `"${vscode.window.activeTextEditor.document.fileName}"`));
+    } else {
+      resolvedArgs.push(arg);
+    }
+  });
+  return resolvedArgs;
+}
+
 export class AustinCommandExecutor implements vscode.Pseudoterminal {
   private austinProcess: ChildProcess | undefined;
   stderr: string | undefined;
@@ -47,10 +61,11 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
 
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
     this.writeEmitter.fire(`Starting Profiler in ${this.cwd}.\r\n`);
-    this.austinProcess = spawn(this.command.cmd, this.command.args, {
+    let resolvedArgs = resolveArgs(this.command.args);
+    this.austinProcess = spawn(this.command.cmd, resolvedArgs, {
       cwd: this.cwd,
     }); // NOSONAR
-    const args = this.command.args.join(' ');
+    const args = resolvedArgs.join(' ');
     this.writeEmitter.fire(`Running '${this.command.cmd}' with args '${args}'.\r\n`);
     if (!this.fileName) {
       this.fileName = `${this.command.cmd} ${args}`;

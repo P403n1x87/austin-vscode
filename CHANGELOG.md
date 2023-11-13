@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.17.0]
+
+- Added support for the `${file}` and `${workspaceFolder}` placeholders in the
+  Austin task definition.
+
 ## [0.16.0]
 
 - Added support for memory mode.
