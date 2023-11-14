@@ -10,6 +10,7 @@ function maybeEnquote(arg: string): string {
 export interface AustinCommandArguments {
     cmd: string
     args: string[]
+    envFile: string | undefined
 }
 
 
@@ -19,7 +20,8 @@ export function getAustinCommand(
     pythonArgs: string[] | undefined = undefined,
     austinArgs: string[] | undefined = undefined,
     interval: number | undefined = undefined,
-    mode: AustinMode | undefined = undefined
+    mode: AustinMode | undefined = undefined,
+    envFile: string | undefined = undefined
 ): AustinCommandArguments {
     const settings = AustinRuntimeSettings.get().settings;
     let _args: string[] = [];
@@ -49,6 +51,7 @@ export function getAustinCommand(
 
     return {
         cmd: maybeEnquote(cmd),
-        args: _args
+        args: _args,
+        envFile: envFile
     };
 }

@@ -180,6 +180,10 @@
           "profileName": {
             "type": "string",
             "description": "Name of the generated profile"
+          },
+          "envFile": {
+            "type": "string",
+            "description": "Path to a .env file to load environment variables from"
           }
         }
       }
@@ -216,6 +220,7 @@
   ],
   "dependencies": {
     "d3": "^7.8.2",
-    "d3-flame-graph": "^4.0.6"
+    "d3-flame-graph": "^4.0.6",
+    "dotenv": "^16.3.1"
   }
 }

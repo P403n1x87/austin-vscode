@@ -6,13 +6,15 @@ import { ChildProcess, spawn } from "child_process";
 import { AustinStats } from "../model";
 import { clearDecorations, setLinesHeat } from "../view";
 
+import { DotenvPopulateInput, config } from "dotenv";
+
 function resolveArgs(args: string[]): string[] {
   const resolvedArgs: string[] = [];
   args.forEach((arg) => {
     if (arg.indexOf("${workspaceFolder}") >= 0 && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length === 1) {
-      resolvedArgs.push(arg.replace("${workspaceFolder}", `"${vscode.workspace.workspaceFolders[0].uri.fsPath}"`));
+      resolvedArgs.push(arg.replace("${workspaceFolder}", vscode.workspace.workspaceFolders[0].uri.fsPath));
     } else if (arg.indexOf("${file}") >= 0 && vscode.window.activeTextEditor) {
-      resolvedArgs.push(arg.replace("${file}", `"${vscode.window.activeTextEditor.document.fileName}"`));
+      resolvedArgs.push(arg.replace("${file}", vscode.window.activeTextEditor.document.fileName));
     } else {
       resolvedArgs.push(arg);
     }
@@ -62,8 +64,24 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
     this.writeEmitter.fire(`Starting Profiler in ${this.cwd}.\r\n`);
     let resolvedArgs = resolveArgs(this.command.args);
+
+    // Make a copy of all defined environment variables
+    let env: DotenvPopulateInput = {};
+    for (let key in process.env) {
+      let value = process.env[key];
+      if (value !== undefined) {
+        env[key] = value;
+      }
+    }
+
+    // Add any environment variables defined in the envFile, if any given
+    if (this.command.envFile) {
+      config({ path: this.command.envFile, processEnv: env });
+    }
+
     this.austinProcess = spawn(this.command.cmd, resolvedArgs, {
-      cwd: this.cwd,
+      "cwd": this.cwd,
+      "env": env,
     }); // NOSONAR
     const args = resolvedArgs.join(' ');
     this.writeEmitter.fire(`Running '${this.command.cmd}' with args '${args}'.\r\n`);

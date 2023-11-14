@@ -3,7 +3,9 @@
 ## [0.17.0]
 
 - Added support for the `${file}` and `${workspaceFolder}` placeholders in the
-  Austin task definition.
+  Austin task definitions.
+
+- Added support for environment files in Austin task definitions.
 
 - Fixed a bug that caused in-line memory percentages to be larger than 100%.
 
