@@ -33,7 +33,11 @@ task, or a one-off execution.
 > <USER>        ALL = (root) NOPASSWD: <PATH_TO_AUSTIN>
 > ~~~
 > at the end, replacing `<USER>` and `<PATH_TO_AUSTIN>` with your user name and
-> the path to the Austin binary respectively.
+> the path to the Austin binary respectively. If you are using environment files
+> in task definitions, you might also need to use the `SETENV` directive:
+> ~~~
+> <USER>        ALL = (root) NOPASSWD:SETENV: <PATH_TO_AUSTIN>
+> ~~~
 
 ### Profiling with tasks
 
@@ -107,6 +111,11 @@ poetry run austin <austin args> python -m pytest
 ```
 
 from the current working directory.
+
+Tasks also support the use of the placeholders `${workspaceFolder}` and
+`${file}`, and the use of environment files via the `envFile` property. To make
+use of the latter on MacOS, you need to use `["sudo", "-E"]` for the `command`
+property.
 
 ### Profiling a standalone script
 

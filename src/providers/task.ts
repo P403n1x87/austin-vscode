@@ -70,7 +70,8 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
           definition.args,
           definition.austinArgs,
           definition.interval,
-          definition.mode
+          definition.mode,
+          definition.envFile,
         );
 
         return new AustinCommandExecutor(
@@ -125,4 +126,9 @@ interface AustinProfileTaskDefinition extends vscode.TaskDefinition {
    * Optional command to run before austin, including its arguments
    */
   command?: string[];
+
+  /**
+   * Optional environment file to source before running austin
+   */
+  envFile?: string;
 }
