@@ -5,6 +5,8 @@
 - Added support for the `${file}` and `${workspaceFolder}` placeholders in the
   Austin task definition.
 
+- Fixed a bug that caused in-line memory percentages to be larger than 100%.
+
 ## [0.16.0]
 
 - Added support for memory mode.
