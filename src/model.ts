@@ -267,7 +267,9 @@ export class AustinStats implements AustinStats {
     }
 
     public update(pid: number, tid: string, frames: FrameObject[], metric: number) {
-        this.overallTotal += metric;
+        if (metric > 0) {
+            this.overallTotal += metric;
+        }
 
         this.updateLineMap(frames, metric);
         this.updateTop(frames, metric);
