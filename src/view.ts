@@ -46,7 +46,7 @@ function formatMemory(bytes: number) {
 function setLineHeat(frame: FrameObject, own: number, total: number, overallTotal: number, localTotal: number, mode: string) {
     const editor = vscode.window.activeTextEditor;
     if (editor !== undefined) {
-        const opacity = own / localTotal;
+        const opacity = Math.min(own / localTotal, 0.6);
         var color: string | undefined = undefined;
 
         switch (mode) {
