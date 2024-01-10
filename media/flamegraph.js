@@ -50,7 +50,7 @@ var stringToColour = function (data, highlight = false) {
             let h = hash(module) % 360;
             let s = hash(scope) % 10;
             let isPy = module.endsWith(".py");
-            return hslToHex(h >= 0 ? h : -h, (isPy ? 60 : 20) + s, highlight ? 90 : 70);
+            return hslToHex(h >= 0 ? h : -h, (isPy ? 60 : 20) + s, highlight ? 80 : 60);
     }
 
     return hslToHex(hue, 0 + sat, highlight ? 90 : 70);

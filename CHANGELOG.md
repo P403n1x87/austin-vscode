@@ -5,6 +5,8 @@
 - Fixed a visualisation bug that caused some frames to be aggregated incorrectly
   by scope name only, resulting in incorrect flame graph visualisations.
 
+- General visual improvements to heat maps and flame graphs.
+
 ## [0.17.0]
 
 - Added support for the `${file}` and `${workspaceFolder}` placeholders in the
