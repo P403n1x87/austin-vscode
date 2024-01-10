@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.17.1]
+
+- Fixed a visualisation bug that caused some frames to be aggregated incorrectly
+  by scope name only, resulting in incorrect flame graph visualisations.
+
 ## [0.17.0]
 
 - Added support for the `${file}` and `${workspaceFolder}` placeholders in the

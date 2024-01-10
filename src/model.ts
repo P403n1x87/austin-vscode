@@ -77,6 +77,7 @@ export class AustinStats implements AustinStats {
         this.overallTotal = 0;
         this.top = new Map();
         this.hierarchy = {
+            key: "",
             name: "",
             value: 0,
             children: [],
@@ -94,6 +95,7 @@ export class AustinStats implements AustinStats {
         this.locationMap.clear();
         this.overallTotal = 0;
         this.hierarchy = {
+            key: "",
             name: this.source!,
             value: 0,
             children: [],
@@ -179,16 +181,17 @@ export class AustinStats implements AustinStats {
         stats.value += metric;
 
         let updateContainer = (container: D3Hierarchy[], frame: FrameObject, keyFactory: (frame: FrameObject) => string, newDataFactory: (frame: FrameObject) => any) => {
-            const name: string = keyFactory(frame);
+            const key: string = keyFactory(frame);
             for (let e of container) {
-                if (e.name === name) {
+                if (e.key === key) {
                     e.value += metric;
                     return e.children;
                 }
             }
             const newContainer: D3Hierarchy[] = [];
             container.push({
-                name: name,
+                key: key,
+                name: frame.scope,
                 value: metric,
                 children: newContainer,
                 data: newDataFactory(frame),
@@ -205,6 +208,7 @@ export class AustinStats implements AustinStats {
             }
             const newContainer: D3Hierarchy[] = [];
             container.push({
+                key: key,
                 name: key,
                 value: metric,
                 children: newContainer,
@@ -236,7 +240,7 @@ export class AustinStats implements AustinStats {
                 container = updateContainer(
                     container,
                     fo,
-                    (fo) => { return fo.scope; /*fo.module && fo.line ? `${fo.scope} (${fo.module})` : fo.scope;*/ },
+                    (fo) => { return `${fo.module}:${fo.scope}`; },
                     (fo) => {
                         return {
                             file: fo.module,
@@ -408,6 +412,7 @@ function parseFrame(frame: string): FrameObject {
 
 
 interface D3Hierarchy {
+    key: string;
     name: string;
     value: number;
     children: D3Hierarchy[];
