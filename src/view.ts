@@ -72,10 +72,11 @@ function setLineHeat(frame: FrameObject, own: number, total: number, overallTota
         if (!columnDelta) {
             editor.setDecorations(lineDecorator, [new vscode.Range(
                 editor.document.lineAt(frame.line - 1).range.start,
-                editor.document.lineAt((frame.lineEnd ? frame.lineEnd : frame.line) - 1).range.end
+                editor.document.lineAt((frame.lineEnd ? Math.max(frame.lineEnd, frame.line) : frame.line) - 1).range.end
             )]);
         }
         else {
+            // If we have column data we must have full line data too.
             let start = new vscode.Position(Math.max(frame.line - 1, 0), Math.max(frame.column! - 1, 0));
             let end = new vscode.Position(Math.max(frame.lineEnd! - 1, 0), Math.max(frame.columnEnd! - 1, 0));
             editor.setDecorations(lineDecorator, [new vscode.Range(start, end)]);
@@ -166,7 +167,7 @@ export function setLinesHeat(locations: Map<string, [FrameObject, number, number
 
         setLineHeat(fo, own, total, overallTotal, localTotal, mode);
 
-        for (let i = fo.line; i <= (fo.lineEnd ? fo.lineEnd : fo.line); i++) {
+        for (let i = fo.line; i <= (fo.lineEnd ? Math.max(fo.lineEnd, fo.line) : fo.line); i++) {
             if (lineStats.has(i)) {
                 let [ownSum, totalSum] = lineStats.get(i)!;
                 lineStats.set(i, [ownSum + own, totalSum + total]);

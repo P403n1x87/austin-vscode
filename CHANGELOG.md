@@ -1,5 +1,10 @@
 # Change Log
 
+## [0.17.2]
+
+- Fixed the heat map visualisation when using the MOJO binary format with
+  Python versions earlier than 3.11.
+
 ## [0.17.1]
 
 - Fixed a visualisation bug that caused some frames to be aggregated incorrectly
