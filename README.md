@@ -24,7 +24,14 @@ Austin binary in the settings.
 There are two ways of executing Austin from VS Code. Either using a configured
 task, or a one-off execution.
 
-> **NOTE** MacOS users should consider adding a rule for Austin to their
+> [!NOTE]
+> When using a Python virtual environment, you might need to manually add the
+> path of the Austin binary to the extension settings. You can do so by
+> searching for the `austin.path` setting and typing the (absolute) path to
+> the binary, e.g. `/home/user/project/.venv/bin/austin`.
+
+> [!NOTE]
+> MacOS users should consider adding a rule for Austin to their
 > `sudoers` file. This will allow you to run `sudo austin ...` without having to
 > type your user password. This is required if you want to run Austin through
 > the extension tasks. To add a rule for Austin to the `sudoers` file, run `sudo
