@@ -33,7 +33,7 @@ export class AustinController {
             "title": "Pick an Austin samples file",
             "filters": {
                 // eslint-disable-next-line @typescript-eslint/naming-convention
-                "Austin files": ["austin", "aprof", "mojo"],
+                "Austin files": ["austin", "aprof", "echion", "mojo"],
                 // eslint-disable-next-line @typescript-eslint/naming-convention
                 "All files": ["*"]
             }
