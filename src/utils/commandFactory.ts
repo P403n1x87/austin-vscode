@@ -3,10 +3,6 @@ import { AustinMode } from '../types';
 import { getConfiguredInterpreter } from './pythonExtension';
 
 
-function maybeEnquote(arg: string): string {
-    return arg.indexOf(' ') >= 0 ? `"${arg}"` : arg;
-}
-
 export interface AustinCommandArguments {
     cmd: string
     args: string[]
@@ -44,13 +40,13 @@ export function getAustinCommand(
     if (settings.binaryMode) { _args.push("-b"); }
     if (austinArgs) { _args = _args.concat(austinArgs); }
     if (pythonFile) {
-        _args.push(maybeEnquote(getConfiguredInterpreter()));
-        _args.push(maybeEnquote(pythonFile));
+        _args.push(getConfiguredInterpreter());
+        _args.push(pythonFile);
     }
-    if (pythonArgs) { _args = _args.concat(pythonArgs.map(maybeEnquote)); }
+    if (pythonArgs) { _args = _args.concat(pythonArgs); }
 
     return {
-        cmd: maybeEnquote(cmd),
+        cmd: cmd,
         args: _args,
         envFile: envFile
     };

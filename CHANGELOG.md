@@ -1,5 +1,9 @@
 # Change Log
 
+## [0.17.3]
+
+- - Fixed regression for support for paths with spaces in Austin tasks.
+
 ## [0.17.2]
 
 - Fixed the heat map visualisation when using the MOJO binary format with
