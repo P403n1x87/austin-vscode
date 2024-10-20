@@ -8,6 +8,12 @@ import { clearDecorations, setLinesHeat } from "../view";
 
 import { DotenvPopulateInput, config } from "dotenv";
 
+
+function maybeEnquote(arg: string): string {
+  return arg.indexOf(' ') >= 0 ? `"${arg}"` : arg;
+}
+
+
 function resolveArgs(args: string[]): string[] {
   const resolvedArgs: string[] = [];
   args.forEach((arg) => {
@@ -83,8 +89,8 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
       "cwd": this.cwd,
       "env": env,
     }); // NOSONAR
-    const args = resolvedArgs.join(' ');
-    this.writeEmitter.fire(`Running '${this.command.cmd}' with args '${args}'.\r\n`);
+    const args = resolvedArgs.map(maybeEnquote).join(' ');
+    this.writeEmitter.fire(`Running '${maybeEnquote(this.command.cmd)}' with args '${args}'.\r\n`);
     if (!this.fileName) {
       this.fileName = `${this.command.cmd} ${args}`;
     }
