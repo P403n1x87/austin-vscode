@@ -282,11 +282,110 @@ suite('MojoParser — special frame types', () => {
         ];
     }
 
-    test('INVALID frame is pushed onto stack', () => {
+    test('INVALID frame is pushed onto stack when no previous stack exists', () => {
         const bytes = buildStreamWithEvent([vi(4)]);  // MOJO_EVENT.invalidFrame
         const stats = parseWith(bytes);
         // INVALID frame has scope "INVALID", module ""
         assert.ok(stats.top.has(':INVALID'));
+    });
+
+    test('invalid frame back-attributes to previous stack of same thread', () => {
+        // Stream: two stacks for pid=1, tid=T1.
+        // First stack has frame /a.py:foo, time=10.
+        // Second stack has an invalid frame — should be attributed to /a.py:foo.
+        const bytes = [
+            0x4D, 0x4F, 0x4A, vi(1),                    // MOJ v1
+            vi(1), ...str('mode'), ...str('wall'),        // metadata
+
+            // First stack for T1
+            vi(2), vi(1), ...str('T1'),                  // stack: pid=1, tid=T1
+            vi(11), vi(2), ...str('/a.py'),              // string key=2 → "/a.py"
+            vi(11), vi(3), ...str('foo'),                // string key=3 → "foo"
+            vi(3), vi(5), vi(2), vi(3), vi(1),          // frame: key=5, file=2, scope=3, line=1
+            vi(5), vi(5),                                // frameRef: key=5
+            vi(9), vi(10),                               // time: 10
+
+            // Second stack for T1 — invalid frame (back-attributed to first)
+            vi(2), vi(1), ...str('T1'),                  // stack: pid=1, tid=T1
+            vi(4),                                       // MOJO_EVENT.invalidFrame
+            vi(9), vi(20),                               // time: 20
+        ];
+        const stats = parseWith(bytes);
+        // Back-attributed: /a.py:foo should accumulate 10 + 20 = 30 overall
+        assert.strictEqual(stats.overallTotal, 30);
+        assert.ok(stats.top.has('/a.py:foo'));
+        // Normalized total for foo should be 1.0 (100% of overall)
+        assert.strictEqual(stats.top.get('/a.py:foo')!.total, 1);
+        // No INVALID frame should appear
+        assert.ok(!stats.top.has(':INVALID'));
+    });
+
+    test('frames after invalid frame are skipped', () => {
+        // After back-attribution, any additional frameReferences in the same
+        // stack event must be discarded (they belong to the invalid capture).
+        const bytes = [
+            0x4D, 0x4F, 0x4A, vi(1),                    // MOJ v1
+            vi(1), ...str('mode'), ...str('wall'),        // metadata
+
+            // First stack for T1
+            vi(2), vi(1), ...str('T1'),                  // stack: pid=1, tid=T1
+            vi(11), vi(2), ...str('/a.py'),              // string key=2
+            vi(11), vi(3), ...str('foo'),                // string key=3
+            vi(3), vi(5), vi(2), vi(3), vi(1),          // frame key=5
+            vi(5), vi(5),                                // frameRef key=5
+            vi(9), vi(10),                               // time: 10
+
+            // Second stack for T1 — invalid frame then a stray frameRef
+            vi(2), vi(1), ...str('T1'),                  // stack
+            vi(4),                                       // invalidFrame
+            vi(5), vi(5),                                // frameRef key=5 (must be ignored)
+            vi(9), vi(5),                                // time: 5
+        ];
+        const stats = parseWith(bytes);
+        // Total should be 10 + 5 = 15 (back-attribution)
+        assert.strictEqual(stats.overallTotal, 15);
+        // foo should be the only entry (100% of total)
+        assert.strictEqual(stats.top.get('/a.py:foo')!.total, 1);
+    });
+
+    test('invalid frame back-attribution is per-thread (interleaved threads)', () => {
+        // T1 has a valid first stack (/a.py:foo), then an invalid second stack.
+        // T2 appears between them. T2's stack must NOT be used for T1's back-attribution.
+        const bytes = [
+            0x4D, 0x4F, 0x4A, vi(1),                    // MOJ v1
+            vi(1), ...str('mode'), ...str('wall'),        // metadata
+
+            // First stack for T1
+            vi(2), vi(1), ...str('T1'),                  // stack: pid=1, tid=T1
+            vi(11), vi(2), ...str('/a.py'),              // string key=2
+            vi(11), vi(3), ...str('foo'),                // string key=3
+            vi(3), vi(5), vi(2), vi(3), vi(1),          // frame key=5
+            vi(5), vi(5),                                // frameRef key=5
+            vi(9), vi(10),                               // time: 10
+
+            // First stack for T2 (interleaved)
+            vi(2), vi(1), ...str('T2'),                  // stack: pid=1, tid=T2
+            vi(11), vi(4), ...str('/b.py'),              // string key=4
+            vi(11), vi(6), ...str('bar'),                // string key=6
+            vi(3), vi(7), vi(4), vi(6), vi(1),          // frame key=7
+            vi(5), vi(7),                                // frameRef key=7
+            vi(9), vi(5),                                // time: 5
+
+            // Second stack for T1 — invalid (should back-attribute to T1's foo, not T2's bar)
+            vi(2), vi(1), ...str('T1'),                  // stack: pid=1, tid=T1
+            vi(4),                                       // invalidFrame
+            vi(9), vi(20),                               // time: 20
+        ];
+        const stats = parseWith(bytes);
+        // Overall: 10 + 5 + 20 = 35
+        assert.strictEqual(stats.overallTotal, 35);
+        // T1's invalid stack back-attributed to foo: foo gets 10 + 20 = 30 → 30/35
+        assert.ok(stats.top.has('/a.py:foo'));
+        assert.ok(stats.top.has('/b.py:bar'));
+        assert.ok(!stats.top.has(':INVALID'));
+        // foo has 30/35 of total, bar has 5/35
+        assert.ok(Math.abs(stats.top.get('/a.py:foo')!.total - 30 / 35) < 1e-9);
+        assert.ok(Math.abs(stats.top.get('/b.py:bar')!.total - 5 / 35) < 1e-9);
     });
 
     test('GC frame is pushed onto stack', () => {

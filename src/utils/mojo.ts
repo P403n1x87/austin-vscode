@@ -164,11 +164,15 @@ export class MojoParser {
         let currentIid: bigint | null = null;
         let currentTid: string | null = null;
         let currentStack = new Array<FrameObject>();
+        let currentStackKey: string | null = null;
         let currentTimeMetric = null;
         let currentMemoryMetric = null;
         let currentIdle = false;
         let currentGC = false;
         let mode: string | null = null;
+
+        let previousStacks = new Map<string, Array<FrameObject>>();
+        let invalidFrame = false;
 
         try {
             while (true) {
@@ -191,9 +195,14 @@ export class MojoParser {
                                 currentStack,
                                 Number(mode === "memory" ? currentMemoryMetric! : currentTimeMetric!),
                             );
+                            // Save the current stack for back-attribution under the OLD key
+                            previousStacks.set(currentStackKey!, currentStack);
                         }
 
                         [currentPid, currentIid, currentTid] = this.consumeStack();
+                        currentStackKey = `${currentPid}:${currentIid}:${currentTid}`;
+                        invalidFrame = false;
+
                         currentStack = [];
                         currentTimeMetric = null;
                         currentMemoryMetric = null;
@@ -211,15 +220,31 @@ export class MojoParser {
                         break;
 
                     case MOJO_EVENT.invalidFrame:
-                        currentStack.push(specialFrame("INVALID"));
+                        if (previousStacks.has(currentStackKey!)) {
+                            // Back-attribution
+                            currentStack = previousStacks.get(currentStackKey!)!;
+                            invalidFrame = true;
+                        } else {
+                            currentStack.push(specialFrame("INVALID"));
+                        }
                         break;
 
                     case MOJO_EVENT.frameReference:
+                        if (invalidFrame) {
+                            // Skip frames that are part of the invalid stack
+                            break;
+                        }
+
                         let key = `${currentPid}:${this.consumeVarInt()}`;
                         currentStack.push(frameRefs.get(key)!);
                         break;
 
                     case MOJO_EVENT.kernelFrame:
+                        if (invalidFrame) {
+                            // Skip frames that are part of the invalid stack
+                            break;
+                        }
+
                         currentStack.push(this.consumeKernel());
                         break;
 
