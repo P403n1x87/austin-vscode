@@ -13,7 +13,7 @@ export function clearDecorations() {
 }
 
 
-function formatTime(microseconds: number) {
+export function formatTime(microseconds: number) {
     // Convert microseconds to a string, choosing units that are the most
     // appropriate for the magnitude of the time.
     if (microseconds < 1000) {
@@ -28,7 +28,7 @@ function formatTime(microseconds: number) {
     return (microseconds / (1000 * 1000 * 1000)).toFixed(2) + "m";
 }
 
-function formatMemory(bytes: number) {
+export function formatMemory(bytes: number) {
     // Convert bytes to a string, choosing units that are the most
     // appropriate for the magnitude of the memory.
     if (bytes < 1024) {
