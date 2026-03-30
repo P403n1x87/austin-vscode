@@ -45,6 +45,7 @@ export class TopStats {
     public total: number = 0;
     public callees: Map<string, TopStats> = new Map();
     public callers: Map<string, TopStats> = new Map();
+    public callerContributions: Map<string, number> = new Map();
     public lines: Set<number> = new Set();
 
     public constructor(scope: string | null = null, module: string | null = null) {
@@ -126,8 +127,12 @@ export class AustinStats implements AustinStats {
             let topStats = stats.get(key)!;
             topStats.total += metric;
             topStats.lines.add(fo.line);
-            if (caller && !topStats.callers.has(caller.key())) {
-                topStats.callers.set(caller.key(), caller);
+            if (caller) {
+                const callerKey = caller.key();
+                if (!topStats.callers.has(callerKey)) {
+                    topStats.callers.set(callerKey, caller);
+                }
+                topStats.callerContributions.set(callerKey, (topStats.callerContributions.get(callerKey) ?? 0) + metric);
             }
             caller = topStats;
         });
@@ -291,7 +296,13 @@ export class AustinStats implements AustinStats {
     }
 
     private finalize() {
-        [...this.top.values()].forEach(v => { v.own /= this.overallTotal; v.total /= this.overallTotal; });
+        [...this.top.values()].forEach(v => {
+            v.own /= this.overallTotal;
+            v.total /= this.overallTotal;
+            for (const [k, val] of v.callerContributions) {
+                v.callerContributions.set(k, val / this.overallTotal);
+            }
+        });
         this._afterCbs.forEach((cb) => cb(this));
     }
 

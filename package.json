@@ -111,6 +111,7 @@
           "contextualTitle": "Call Stacks"
         },
         {
+          "type": "webview",
           "id": "austin-vscode.top",
           "name": "Top",
           "contextualTitle": "Top"
