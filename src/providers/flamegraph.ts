@@ -17,6 +17,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     private _lines: boolean = false;
     private _stats: AustinStats | null = null;
     private _initialized: boolean = false;
+    private _onFrameSelected?: (pathKey: string) => void;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -87,12 +88,27 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
             const module = data.file;
             if (source && module) {
                 vscode.commands.executeCommand('austin-vscode.openSourceAtLine', module, data.line || 0);
+                if (this._onFrameSelected && data.pathKey) {
+                    this._onFrameSelected(data.pathKey);
+                }
             }
         });
 
         this._stats ? this._setFlameGraphHtml() : this._setWelcomeHtml();
 
         webviewView.show(true);
+    }
+
+    public onFrameSelected(cb: (pathKey: string) => void) {
+        this._onFrameSelected = cb;
+    }
+
+    public search(term: string) {
+        this._view?.webview.postMessage({ search: term });
+    }
+
+    public focusFrame(pathKey: string) {
+        this._view?.webview.postMessage({ focus: pathKey });
     }
 
     public refresh(stats: AustinStats) {

@@ -73,9 +73,27 @@ function timeLabel(d, parent) {
 }
 
 
+function addPathKeys(node, parentKey) {
+    var myKey = parentKey ? parentKey + '/' + node.name : node.name;
+    if (node.data) { node.data.pathKey = myKey; }
+    if (node.children) {
+        for (var i = 0; i < node.children.length; i++) {
+            addPathKeys(node.children[i], myKey);
+        }
+    }
+}
+
+
 function flameGraph(data) {
     if (!data || isEmpty(data)) {
         return;
+    }
+
+    // Add path keys to every node's data before D3 processes it
+    if (data.children) {
+        for (var i = 0; i < data.children.length; i++) {
+            addPathKeys(data.children[i], '');
+        }
     }
 
     // @ts-ignore
@@ -122,6 +140,9 @@ function flameGraph(data) {
     });
 
     flameGraph.setSearchMatch(function (d, term) {
+        if (searchMode === 'path') {
+            return !!(d.data.data && d.data.data.pathKey === term);
+        }
         return d.data.name.indexOf(term) !== -1 || (d.data.data.file && d.data.data.file.indexOf(term) !== -1);
     });
 
@@ -168,6 +189,8 @@ function setMetadata(meta) {
 }
 
 
+var searchMode = 'text'; // 'text' | 'path'
+
 const state = vscode.getState();
 if (state) {
     setMetadata(state.meta);
@@ -176,7 +199,18 @@ if (state) {
 
 
 window.addEventListener('message', event => {
-    if (event.data.search) {
+    if (event.data.focus) {
+        var focusKey = event.data.focus;
+        searchMode = 'path';
+        graph.search(focusKey);
+        d3.select('#chart').selectAll('g').each(function (d) {
+            if (d.data.data && d.data.data.pathKey === focusKey) {
+                graph.zoomTo(d);
+                return; // d3 each doesn't have break; first match is enough
+            }
+        });
+    } else if (event.data.search) {
+        searchMode = 'text';
         graph.search(event.data.search);
     }
     else if (event.data.meta) {
