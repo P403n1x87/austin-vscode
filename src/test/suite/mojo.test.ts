@@ -351,7 +351,7 @@ suite('MojoParser — memory mode', () => {
             vi(11), vi(3), ...str('fn'),
             vi(3), vi(1), vi(2), vi(3), vi(1),
             vi(5), vi(1),
-            vi(9), vi(999),   // time event (should be ignored in memory mode)
+            vi(9), ...varIntBytes(999),   // time event (should be ignored in memory mode)
             vi(10), vi(40),   // memory event: 40
         ];
         const stats = parseWith(bytes);

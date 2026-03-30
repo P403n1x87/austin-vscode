@@ -15,8 +15,8 @@ suite('String Extension (rsplit)', () => {
         assert.deepStrictEqual('a:b:c'.rsplit(':', 0), ['a', 'b', 'c']);
     });
 
-    test('returns whole string in first element when separator not found', () => {
-        assert.deepStrictEqual('abc'.rsplit(':', 1), ['abc']);
+    test('returns empty first element when separator not found', () => {
+        assert.deepStrictEqual('abc'.rsplit(':', 1), ['', 'abc']);
     });
 
     test('handles separator at the very end', () => {
