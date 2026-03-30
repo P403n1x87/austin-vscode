@@ -106,6 +106,7 @@
       ],
       "austin-stats": [
         {
+          "type": "webview",
           "id": "austin-vscode.callStacks",
           "name": "Call Stacks",
           "contextualTitle": "Call Stacks"

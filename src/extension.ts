@@ -4,14 +4,14 @@ import { FlameGraphViewProvider } from './providers/flamegraph';
 import { AustinController } from './controller';
 import { AustinStats } from './model';
 import { TopViewProvider } from './providers/top';
-import { CallStackDataProvider } from './providers/callstack';
+import { CallStackViewProvider } from './providers/callstack';
 import { AustinProfileTaskProvider } from './providers/task';
 import { AustinRuntimeSettings } from './settings';
 import { AustinMode } from './types';
 
 
 export function activate(context: vscode.ExtensionContext) {
-	vscode.workspace.onDidChangeTextDocument((changeEvent) => {
+	vscode.workspace.onDidChangeTextDocument((_changeEvent) => {
 		clearDecorations();
 	});
 
@@ -23,12 +23,15 @@ export function activate(context: vscode.ExtensionContext) {
 
 	const flameGraphViewProvider = new FlameGraphViewProvider(context.extensionUri);
 	const topProvider = new TopViewProvider(context.extensionUri);
-	const callStackProvider = new CallStackDataProvider();
+	const callStackProvider = new CallStackViewProvider(context.extensionUri);
 
 	stats.registerBeforeCallback(() => flameGraphViewProvider.showLoading());
 	stats.registerAfterCallback((stats) => flameGraphViewProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => topProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => callStackProvider.refresh(stats));
+
+	flameGraphViewProvider.onFrameSelected((pathKey) => callStackProvider.focusPath(pathKey));
+	callStackProvider.onFrameSelected((pathKey) => flameGraphViewProvider.focusFrame(pathKey));
 
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(
@@ -46,7 +49,7 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
-		vscode.window.registerTreeDataProvider(CallStackDataProvider.viewType, callStackProvider)
+		vscode.window.registerWebviewViewProvider(CallStackViewProvider.viewType, callStackProvider)
 	);
 
 	context.subscriptions.push(

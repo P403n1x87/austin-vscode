@@ -222,7 +222,7 @@ export class AustinStats implements AustinStats {
             return newContainer;
         };
 
-        let container = getGroupContainer(`Thread ${tid}`, getGroupContainer(`Processs ${pid}`, stats.children));
+        let container = getGroupContainer(`Thread ${tid}`, getGroupContainer(`Process ${pid}`, stats.children));
 
         frameList.forEach((fo) => {
             if (false) { // TODO: Consider whether to re-enable per-line flamegraphs or not.
@@ -259,16 +259,30 @@ export class AustinStats implements AustinStats {
         });
     }
 
-    private updateCallStack(pid: number, tid: string, frameList: FrameObject[]) {
-        let stats = this.callStack.callees.getDefault(pid.toString(), () => new TopStats(`Process ${pid}`, ""))
-            .callees.getDefault(tid, () => new TopStats(`Thread ${tid}`, ""));
+    private updateCallStack(pid: number, tid: string, frameList: FrameObject[], metric: number) {
+        const processNode = this.callStack.callees.getDefault(pid.toString(), () => new TopStats(`Process ${pid}`, ""));
+        processNode.total += metric;
+        let current = processNode.callees.getDefault(tid, () => new TopStats(`Thread ${tid}`, ""));
+        current.total += metric;
 
-        frameList.forEach((fo) => {
-            let key = `${fo.module}:${fo.scope}`;
-            let callee = stats.callees.getDefault(key, () => new TopStats(fo.scope, fo.module));
+        frameList.forEach((fo, idx) => {
+            const key = `${fo.module}:${fo.scope}`;
+            const callee = current.callees.getDefault(key, () => new TopStats(fo.scope, fo.module));
             callee.lines.add(fo.line);
-            stats = callee;
+            callee.total += metric;
+            if (idx === frameList.length - 1) {
+                callee.own += metric;
+            }
+            current = callee;
         });
+    }
+
+    private normalizeCallStack(node: TopStats): void {
+        node.own /= this.overallTotal;
+        node.total /= this.overallTotal;
+        for (const child of node.callees.values()) {
+            this.normalizeCallStack(child);
+        }
     }
 
     public setMetadata(key: string, value: string) {
@@ -283,7 +297,7 @@ export class AustinStats implements AustinStats {
         this.updateLineMap(frames, metric);
         this.updateTop(frames, metric);
         this.updateHierarchy(pid, tid, frames, metric);
-        this.updateCallStack(pid, tid, frames);
+        this.updateCallStack(pid, tid, frames, metric);
     }
 
     public registerBeforeCallback(cb: () => void) {
@@ -303,6 +317,9 @@ export class AustinStats implements AustinStats {
                 v.callerContributions.set(k, val / this.overallTotal);
             }
         });
+        for (const child of this.callStack.callees.values()) {
+            this.normalizeCallStack(child);
+        }
         this._afterCbs.forEach((cb) => cb(this));
     }
 

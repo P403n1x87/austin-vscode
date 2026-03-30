@@ -134,28 +134,38 @@
 
     function numCell(value, kind, label) {
         const w = Math.min(100, value * 100).toFixed(1);
+        const c = statColor(value);
         return `<td class="num"><div class="bar-row">` +
             `<div class="bar-bg"><div class="bar-fill ${kind}" style="width:${w}%"></div></div>` +
-            `<span class="pct">${label}%</span>` +
+            `<span class="pct"${c ? ` style="color:${c}"` : ''}>${label}%</span>` +
             `</div></td>`;
     }
 
     function contribCell(value, label) {
         const w = Math.min(100, value * 100).toFixed(1);
+        const c = statColor(value);
         return `<td class="num" title="% of parent&#39;s time attributed to this caller">` +
             `<div class="bar-row">` +
             `<div class="bar-bg"><div class="bar-fill contrib" style="width:${w}%"></div></div>` +
-            `<span class="pct">${label}%</span>` +
+            `<span class="pct"${c ? ` style="color:${c}"` : ''}>${label}%</span>` +
             `</div></td>`;
     }
 
     function funcCell(scope, level) {
-        const indent = level * 14;
+        const indent = level * 10;
         return `<td class="func" style="padding-left:${indent + 6}px" title="${esc(scope)}">${esc(scope || '')}</td>`;
     }
 
     function modCell(module) {
         return `<td class="mod" title="${esc(module)}">${esc(basename(module || ''))}</td>`;
+    }
+
+    function statColor(value) {
+        const pct = value * 100;
+        if (pct >= 75) { return '#e74c3c'; }
+        if (pct >= 50) { return '#e67e22'; }
+        if (pct >= 25) { return '#f1c40f'; }
+        return null;
     }
 
     function fmt(v) { return (v * 100).toFixed(2); }
