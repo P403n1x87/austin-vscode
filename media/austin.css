@@ -43,15 +43,8 @@ button {
     display: inline-block;
 }
 
-.d3-flame-graph rect {
-    stroke-width: 1px;
-    stroke-opacity: 0.33;
-    fill-opacity: .9;
-}
-
-.d3-flame-graph-label {
-    margin-top: 4px;
-    color: antiquewhite;
+#chart canvas {
+    display: block;
 }
 
 #header {
@@ -114,6 +107,7 @@ button {
     backdrop-filter: blur(12px);
     background-color: rgba(46, 53, 58, 0.8);
     color: antiquewhite;
+    /* font-size set dynamically via JS to match editor font size */
     padding: 4px;
     position: fixed;
     bottom: 0px;

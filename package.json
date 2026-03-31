@@ -199,7 +199,7 @@
     "lint": "eslint src",
     "test": "mocha",
     "test:vscode": "node ./out/test/runTest.js",
-    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
     "esbuild": "npm run esbuild-base -- --sourcemap",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
     "test-compile": "tsc -p ./"
@@ -222,8 +222,6 @@
     "ms-python.python"
   ],
   "dependencies": {
-    "d3": "^7.8.2",
-    "d3-flame-graph": "^4.0.6",
     "dotenv": "^16.3.1"
   }
 }

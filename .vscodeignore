@@ -1,6 +1,8 @@
 .vscode/**
 .vscode-test/**
+node_modules/**
 out/test/**
+out/**/*.js.map
 src/**
 .gitignore
 .yarnrc

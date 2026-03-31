@@ -136,9 +136,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         }
         const webview = this._view.webview;
 
-        const d3ScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3', 'dist', 'd3.js'));
-        const d3FlameGraphScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3-flame-graph', 'dist', 'd3-flamegraph.js'));
-        const d3FlameGraphCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3-flame-graph', 'dist', 'd3-flamegraph.css'));
+        const flameGraphUtilsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'flamegraph-utils.js'));
         const flameGraphScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'flamegraph.js'));
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
         const austinLogoUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin-light.svg'));
@@ -146,7 +144,6 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         webview.html = `<!DOCTYPE html>
 			<html lang="en">
             <head>
-                <link rel="stylesheet" type="text/css" href="${d3FlameGraphCssUri}">
                 <link rel="stylesheet" type="text/css" href="${austinCssUri}">
             </head>
             <body class="logo">
@@ -154,8 +151,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 <div id="chart"></div>
                 <div id="footer"></div>
 
-                <script type="text/javascript" src="${d3ScriptUri}"></script>
-                <script type="text/javascript" src="${d3FlameGraphScriptUri}"></script>
+                <script type="text/javascript" src="${flameGraphUtilsUri}"></script>
                 <script type="text/javascript" src="${flameGraphScriptUri}"></script>
             </body>
 			</html>`;
