@@ -4,6 +4,7 @@
     let data = [];
     let sortCol = 'own';
     let sortAsc = false;
+    let filterTerm = '';
     let expanded = new Set();
     let idCounter = 0;
 
@@ -44,13 +45,19 @@
                 : String(bv).localeCompare(String(av));
         });
 
+        const term = filterTerm.toLowerCase();
+        const filtered = term ? sorted.filter(item =>
+            (item.scope  && item.scope.toLowerCase().includes(term)) ||
+            (item.module && item.module.toLowerCase().includes(term))
+        ) : sorted;
+
         idCounter = 0;
         expanded.clear();
 
         const tbody = document.getElementById('tbody');
         tbody.innerHTML = '';
 
-        for (const item of sorted) {
+        for (const item of filtered) {
             const rowId = String(idCounter++);
             appendTopRow(tbody, item, rowId);
             appendCallerRows(tbody, item.callers, rowId, 1);
@@ -279,6 +286,31 @@
     document.getElementById('collapse-all').addEventListener('click', () => {
         if (data.length > 0) { render(); }
     });
+
+    const filterInput = document.getElementById('filter-input');
+    const filterClear = document.getElementById('filter-clear');
+
+    filterInput.addEventListener('input', e => {
+        filterTerm = e.target.value.trim();
+        filterClear.classList.toggle('visible', filterTerm.length > 0);
+        render();
+    });
+
+    filterClear.addEventListener('click', () => {
+        filterInput.value = '';
+        filterTerm = '';
+        filterClear.classList.remove('visible');
+        filterInput.focus();
+        render();
+    });
+
+    // Keep thead positioned just below the sticky toolbar regardless of its height.
+    const toolbar = document.querySelector('.toolbar');
+    const updateToolbarHeight = () => {
+        document.documentElement.style.setProperty('--toolbar-h', toolbar.offsetHeight + 'px');
+    };
+    updateToolbarHeight();
+    new ResizeObserver(updateToolbarHeight).observe(toolbar);
 
     // ---- sortable headers ----
 

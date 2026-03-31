@@ -288,5 +288,12 @@
         });
     });
 
+    const toolbar = document.querySelector('.toolbar');
+    const updateToolbarHeight = () => {
+        document.documentElement.style.setProperty('--toolbar-h', toolbar.offsetHeight + 'px');
+    };
+    updateToolbarHeight();
+    new ResizeObserver(updateToolbarHeight).observe(toolbar);
+
     vscode.postMessage('initialized');
 })();
