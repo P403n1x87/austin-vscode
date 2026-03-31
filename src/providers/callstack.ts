@@ -9,6 +9,7 @@ interface CallStackNode {
     total: number;
     line: number;
     children: CallStackNode[];
+    childrenPending?: boolean;
 }
 
 function normalizeScope(scope: string): string {
@@ -18,17 +19,21 @@ function normalizeScope(scope: string): string {
     return type === 'P' ? `Process ${id}` : `Thread ${id}`;
 }
 
-function serializeNode(node: TopStats, parentPath: string): CallStackNode {
+function serializeNode(node: TopStats, parentPath: string, depth: number): CallStackNode {
     const scope = normalizeScope(node.scope ?? '');
     const pathKey = parentPath ? `${parentPath}/${scope}` : scope;
+    const hasChildren = node.callees.size > 0;
     return {
         pathKey,
         scope,
         module: node.module || null,
         own: node.own,
         total: node.total,
-        line: node.lines.size > 0 ? Math.min(...node.lines) : 0,
-        children: [...node.callees.values()].map(child => serializeNode(child, pathKey)),
+        line: node.minLine,
+        children: depth > 0
+            ? [...node.callees.values()].map(child => serializeNode(child, pathKey, depth - 1))
+            : [],
+        childrenPending: hasChildren && depth <= 0,
     };
 }
 
@@ -40,6 +45,7 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
     private _stats: AustinStats | null = null;
     private _initialized: boolean = false;
     private _onFrameSelected?: (pathKey: string) => void;
+    private _nodeMap: Map<string, TopStats> = new Map();
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -70,6 +76,14 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
             if (data.pathKey && this._onFrameSelected) {
                 this._onFrameSelected(data.pathKey);
             }
+            if (data.requestChildren) {
+                const node = this._nodeMap.get(data.requestChildren);
+                if (node) {
+                    const parentPathKey = data.requestChildren;
+                    const children = [...node.callees.values()].map(child => serializeNode(child, parentPathKey, 3));
+                    this._view?.webview.postMessage({ childrenFor: parentPathKey, children });
+                }
+            }
         });
 
         webviewView.webview.html = this._getHtml(webviewView.webview);
@@ -77,6 +91,10 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
 
     public onFrameSelected(cb: (pathKey: string) => void) {
         this._onFrameSelected = cb;
+    }
+
+    public showLoading() {
+        this._view?.webview.postMessage({ loading: true });
     }
 
     public focusPath(pathKey: string) {
@@ -88,8 +106,21 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         if (this._view && this._initialized) { this._postData(stats); }
     }
 
+    private _buildNodeMap(node: TopStats, parentPath: string): void {
+        const scope = normalizeScope(node.scope ?? '');
+        const pathKey = parentPath ? `${parentPath}/${scope}` : scope;
+        this._nodeMap.set(pathKey, node);
+        for (const child of node.callees.values()) {
+            this._buildNodeMap(child, pathKey);
+        }
+    }
+
     private _postData(stats: AustinStats) {
-        const tree = [...stats.callStack.callees.values()].map(node => serializeNode(node, ''));
+        this._nodeMap.clear();
+        for (const node of stats.callStack.callees.values()) {
+            this._buildNodeMap(node, '');
+        }
+        const tree = [...stats.callStack.callees.values()].map(node => serializeNode(node, '', 3));
         this._view!.webview.postMessage({ tree });
     }
 
@@ -119,12 +150,25 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
             gap: 6px;
             padding: 4px 6px;
             border-bottom: 1px solid var(--vscode-panel-border, #444);
-            font-size: 11px;
+            font-size: 0.9em;
             color: var(--vscode-descriptionForeground);
             user-select: none;
         }
         .toolbar label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
         .toolbar input[type=checkbox] { cursor: pointer; accent-color: var(--vscode-focusBorder); }
+        .toolbar-btn {
+            margin-left: auto;
+            background: none;
+            border: none;
+            padding: 2px;
+            cursor: pointer;
+            color: var(--vscode-descriptionForeground);
+            display: flex;
+            align-items: center;
+            border-radius: 3px;
+            opacity: 0.7;
+        }
+        .toolbar-btn:hover { opacity: 1; background: var(--vscode-list-hoverBackground); }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -140,7 +184,7 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
             padding: 5px 6px;
             border-bottom: 1px solid var(--vscode-panel-border, #444);
             font-weight: 600;
-            font-size: 11px;
+            font-size: 0.9em;
             color: var(--vscode-foreground);
             white-space: nowrap;
             overflow: hidden;
@@ -180,7 +224,7 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         tr:not([data-expandable]) .chevron { visibility: hidden; }
         .scope-name {
             font-family: var(--vscode-editor-font-family, monospace);
-            font-size: 12px;
+            font-size: var(--vscode-editor-font-size, 1em);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -190,7 +234,7 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         .scope-module {
             flex-shrink: 0;
             margin-left: 6px;
-            font-size: 10px;
+            font-size: 0.85em;
             color: var(--vscode-descriptionForeground);
             white-space: nowrap;
         }
@@ -198,7 +242,7 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         td.stat {
             text-align: right;
             width: 64px;
-            font-size: 11px;
+            font-size: var(--vscode-editor-font-size, 1em);
             font-family: var(--vscode-editor-font-family, monospace);
             font-variant-numeric: tabular-nums;
             color: var(--vscode-foreground);
@@ -215,14 +259,42 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
             text-align: center;
             font-style: italic;
         }
+        #loading {
+            display: none;
+            position: fixed;
+            inset: 0;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.12);
+            z-index: 10;
+        }
+        #loading.active { display: flex; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(128,128,128,0.25);
+            border-top-color: var(--vscode-progressBar-background, #007acc);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
     </style>
 </head>
 <body>
+    <div id="loading"><div class="spinner"></div></div>
     <div class="toolbar">
         <label>
             <input type="checkbox" id="sync-toggle" checked>
             Sync with flame graph
         </label>
+        <button class="toolbar-btn" id="collapse-all" title="Collapse all">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                <rect x="2" y="2" width="12" height="1.5" rx="0.75"/>
+                <rect x="2" y="12.5" width="12" height="1.5" rx="0.75"/>
+                <path d="M8 4.5 L5 7.5 L8 7.5 L8 8.5 L5 8.5 L8 11.5 L11 8.5 L8 8.5 L8 7.5 L11 7.5 Z" opacity="0"/>
+                <path d="M5.5 5L8 7.5L10.5 5M5.5 11L8 8.5L10.5 11" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
     </div>
     <div id="empty" class="empty">No profiling data loaded.</div>
     <table id="table" style="display:none">

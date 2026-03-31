@@ -8,12 +8,18 @@
     let sortAsc = false;
 
     const syncToggle = document.getElementById('sync-toggle');
+    const loading = document.getElementById('loading');
 
     window.addEventListener('message', event => {
         const msg = event.data;
-        if (msg.tree !== undefined) {
+        if (msg.loading) {
+            loading.classList.add('active');
+        } else if (msg.tree !== undefined) {
+            loading.classList.remove('active');
             treeData = msg.tree;
             render();
+        } else if (msg.childrenFor !== undefined) {
+            insertLazyChildren(msg.childrenFor, msg.children);
         } else if (msg.focus) {
             if (syncToggle.checked) { focusPath(msg.focus.pathKey); }
         }
@@ -47,18 +53,20 @@
         return [...nodes].sort((a, b) => sortAsc ? a[sortCol] - b[sortCol] : b[sortCol] - a[sortCol]);
     }
 
-    function appendNode(tbody, node, parentId, level) {
+    function appendNode(parent, node, parentId, level) {
         const rowId = String(idCounter++);
-        const hasChildren = node.children && node.children.length > 0;
+        const hasChildren = (node.children && node.children.length > 0) || node.childrenPending;
 
         const tr = document.createElement('tr');
         tr.dataset.rowId = rowId;
+        tr.dataset.level = String(level);
         if (parentId !== null) {
             tr.dataset.parentId = parentId;
             tr.style.display = 'none';
         }
         if (hasChildren) { tr.dataset.expandable = '1'; }
         tr.dataset.pathKey = node.pathKey || '';
+        if (node.childrenPending) { tr.dataset.childrenPending = '1'; }
 
         const indent = level * 10;
         const ownText   = node.own   > 0 ? fmt(node.own)   + '%' : '';
@@ -80,10 +88,18 @@
             if (node.pathKey && syncToggle.checked) { vscode.postMessage({ pathKey: node.pathKey }); }
         });
 
-        tbody.appendChild(tr);
+        if (typeof parent.appendChild === 'function') {
+            parent.appendChild(tr);
+        } else {
+            // parent is a reference row — insert after it
+            parent.parentNode.insertBefore(tr, parent.nextSibling);
+            parent = tr; // subsequent siblings insert after this
+        }
 
-        for (const child of sorted(node.children)) {
-            appendNode(tbody, child, rowId, level + 1);
+        if (!node.childrenPending && node.children) {
+            for (const child of sorted(node.children)) {
+                appendNode(document.getElementById('tbody'), child, rowId, level + 1);
+            }
         }
     }
 
@@ -96,6 +112,11 @@
             expanded.delete(rowId);
             if (row) { delete row.dataset.open; }
         } else {
+            if (row && row.dataset.childrenPending) {
+                // Children not yet loaded — request from extension
+                vscode.postMessage({ requestChildren: row.dataset.pathKey });
+                return;
+            }
             document.querySelectorAll(`tr[data-parent-id="${rowId}"]`).forEach(tr => {
                 tr.style.display = '';
             });
@@ -114,6 +135,80 @@
                 delete tr.dataset.open;
             }
         });
+    }
+
+    function insertLazyChildren(parentPathKey, children) {
+        const parentRow = document.querySelector(`tr[data-path-key="${CSS.escape(parentPathKey)}"]`);
+        if (!parentRow) { return; }
+        const parentId = parentRow.dataset.rowId;
+        const parentLevel = parseInt(parentRow.dataset.level || '0', 10);
+
+        // Clear the pending flag
+        delete parentRow.dataset.childrenPending;
+
+        // Find the first row that is NOT a descendant (level <= parentLevel)
+        let insertBefore = parentRow.nextElementSibling;
+        while (insertBefore) {
+            if (parseInt(insertBefore.dataset.level || '0', 10) <= parentLevel) { break; }
+            insertBefore = insertBefore.nextElementSibling;
+        }
+
+        const tbody = document.getElementById('tbody');
+
+        // Insert children rows before insertBefore (or at end if null)
+        for (const child of sorted(children)) {
+            insertNodeBefore(tbody, insertBefore, child, parentId, parentLevel + 1);
+        }
+
+        // Now expand
+        document.querySelectorAll(`tr[data-parent-id="${parentId}"]`).forEach(tr => {
+            tr.style.display = '';
+        });
+        expanded.add(parentId);
+        parentRow.dataset.open = '1';
+    }
+
+    function insertNodeBefore(tbody, refNode, node, parentId, level) {
+        const rowId = String(idCounter++);
+        const hasChildren = (node.children && node.children.length > 0) || node.childrenPending;
+
+        const tr = document.createElement('tr');
+        tr.dataset.rowId = rowId;
+        tr.dataset.level = String(level);
+        tr.dataset.parentId = parentId;
+        tr.style.display = 'none';
+        if (hasChildren) { tr.dataset.expandable = '1'; }
+        tr.dataset.pathKey = node.pathKey || '';
+        if (node.childrenPending) { tr.dataset.childrenPending = '1'; }
+
+        const indent = level * 10;
+        const ownText   = node.own   > 0 ? fmt(node.own)   + '%' : '';
+        const totalText = node.total > 0 ? fmt(node.total) + '%' : '';
+        const mod = node.module ? basename(node.module) : '';
+
+        tr.innerHTML =
+            `<td><div class="scope-cell" style="padding-left:${indent}px">` +
+                `<span class="chevron">&#9654;</span>` +
+                `<span class="scope-name" title="${esc(node.scope)}">${esc(node.scope)}</span>` +
+                (mod ? `<span class="scope-module" title="${esc(node.module)}">${esc(mod)}</span>` : '') +
+            `</div></td>` +
+            statCell(node.own, ownText) +
+            statCell(node.total, totalText);
+
+        tr.addEventListener('click', () => {
+            if (node.module) { navigate(node.module, node.line); }
+            if (hasChildren) { toggleRow(rowId); }
+            if (node.pathKey && syncToggle.checked) { vscode.postMessage({ pathKey: node.pathKey }); }
+        });
+
+        tbody.insertBefore(tr, refNode || null);
+
+        if (!node.childrenPending && node.children) {
+            for (const child of sorted(node.children)) {
+                // Children of lazy-inserted nodes also go before refNode
+                insertNodeBefore(tbody, refNode, child, rowId, level + 1);
+            }
+        }
     }
 
     function statCell(value, text) {
@@ -177,6 +272,10 @@
         void target.offsetWidth;
         target.classList.add('focused');
     }
+
+    document.getElementById('collapse-all').addEventListener('click', () => {
+        if (treeData) { render(); }
+    });
 
     document.querySelectorAll('th[data-col]').forEach(th => {
         th.addEventListener('click', () => {

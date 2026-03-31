@@ -26,6 +26,8 @@ export function activate(context: vscode.ExtensionContext) {
 	const callStackProvider = new CallStackViewProvider(context.extensionUri);
 
 	stats.registerBeforeCallback(() => flameGraphViewProvider.showLoading());
+	stats.registerBeforeCallback(() => topProvider.showLoading());
+	stats.registerBeforeCallback(() => callStackProvider.showLoading());
 	stats.registerAfterCallback((stats) => flameGraphViewProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => topProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => callStackProvider.refresh(stats));
