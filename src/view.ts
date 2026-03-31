@@ -86,7 +86,7 @@ function setLineHeat(frame: FrameObject, own: number, _total: number, _overallTo
     }
 }
 
-function statColor(fraction: number): string | null {
+export function statColor(fraction: number): string | null {
     const pct = fraction * 100;
     if (pct >= 75) { return '#e74c3c'; }
     if (pct >= 50) { return '#e67e22'; }
@@ -129,7 +129,7 @@ interface GutterMetrics {
  * The visual overlay uses position:absolute (no layout impact), so `height` can
  * safely equal the full resolved line height without ever expanding lines.
  */
-function computeGutterMetrics(maxLabelChars: number): GutterMetrics {
+export function computeGutterMetrics(maxLabelChars: number): GutterMetrics {
     const config = vscode.workspace.getConfiguration('editor');
     const editorFontSize = config.get<number>('fontSize') ?? 14;
     const lineHeightSetting = config.get<number>('lineHeight') ?? 0;
@@ -188,7 +188,7 @@ interface ModeColors {
     core: string;
 }
 
-function modeColors(mode: string): ModeColors {
+export function modeColors(mode: string): ModeColors {
     switch (mode) {
         case "cpu":    return { bg: "rgba(127,0,0,0.06)",   glow: "rgba(255,64,64,0.30)",   core: "rgba(255,120,120,0.85)" };
         case "wall":   return { bg: "rgba(100,100,0,0.06)", glow: "rgba(192,192,64,0.30)",  core: "rgba(220,220,120,0.85)" };
