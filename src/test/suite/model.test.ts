@@ -35,7 +35,7 @@ suite('TopStats', () => {
         assert.strictEqual(ts.total, 0);
         assert.strictEqual(ts.callees.size, 0);
         assert.strictEqual(ts.callers.size, 0);
-        assert.strictEqual(ts.lines.size, 0);
+        assert.strictEqual(ts.minLine, 0);
     });
 
     test('constructs with provided scope and module', () => {

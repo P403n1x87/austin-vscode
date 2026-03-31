@@ -3,10 +3,6 @@ import { setLinesHeat } from '../view';
 import { AustinStats } from '../model';
 
 
-function delay(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 
 export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
@@ -26,7 +22,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
-        context: vscode.WebviewViewResolveContext,
+        _context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken,
     ) {
         this._view = webviewView;
@@ -138,8 +134,6 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         if (this._view === undefined || this._view.webview === undefined) {
             return;
         }
-        // Use a nonce to only allow a specific script to be run.
-        const nonce = getNonce();
         const webview = this._view.webview;
 
         const d3ScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', 'd3', 'dist', 'd3.js'));
@@ -156,7 +150,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 <link rel="stylesheet" type="text/css" href="${austinCssUri}">
             </head>
             <body class="logo">
-                <div id="header"><img src="${austinLogoUri}" /> <span class="vc" id="mode"/></div>
+                <div id="header"><img src="${austinLogoUri}" /><span class="vc" id="mode"></span><input id="search-box" type="text" placeholder="Search…" /><button id="header-open" onclick="onOpen()">Open</button></div>
                 <div id="chart"></div>
                 <div id="footer"></div>
 
@@ -178,18 +172,26 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 			<html lang="en">
             <head>
                 <link rel="stylesheet" type="text/css" href="${austinCssUri}">
+                <style>
+                    @keyframes spin { to { transform: rotate(360deg); } }
+                    .spinner {
+                        width: 28px; height: 28px;
+                        border: 3px solid rgba(255,255,255,0.15);
+                        border-top-color: rgba(255,255,255,0.7);
+                        border-radius: 50%;
+                        animation: spin 0.7s linear infinite;
+                        margin: 0 auto 10px;
+                    }
+                    .loading-label { color: rgba(255,255,255,0.6); font-size: 12px; }
+                </style>
             </head>
             <body>
                 <div class="box">
-                    <div class="center">Crunching the numbers ...</div>
+                    <div class="spinner"></div>
+                    <div class="center loading-label">Crunching the numbers…</div>
                 </div>
-
                 <script>
                 const vscode = acquireVsCodeApi();
-                
-                function onOpen() {
-                    vscode.postMessage("open");;
-                }
                 </script>
             </body>
 			</html>`;
@@ -224,13 +226,4 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
             </body>
 			</html>`;
     }
-}
-
-function getNonce() {
-    let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
 }

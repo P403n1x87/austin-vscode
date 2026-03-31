@@ -3,10 +3,18 @@
 // @ts-ignore
 const vscode = acquireVsCodeApi();
 
+const d3 = /** @type {any} */ (window).d3;
+const flamegraph = /** @type {any} */ (window).flamegraph;
 
+/**
+ * @param {number} h
+ * @param {number} s
+ * @param {number} l
+ */
 function hslToHex(h, s, l) {
     l /= 100;
     const a = s * Math.min(l, 1 - l) / 100;
+    /** @param {number} n */
     const f = n => {
         const k = (n + h / 30) % 12;
         const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
@@ -16,6 +24,7 @@ function hslToHex(h, s, l) {
 }
 
 
+/** @param {string} text */
 var hash = function (text) {
     var hash = 0;
     for (var i = 0; i < text.length; i++) {
@@ -24,13 +33,14 @@ var hash = function (text) {
     return hash;
 };
 
-var stringToColour = function (data, highlight = false) {
+/** @param {any} data */
+var stringToColour = function (data) {
     let name = data.name;
     let scope = data.data.name;
     let module = data.data.file;
 
     if (!module) {
-        return hslToHex(0, 10, highlight ? 90 : 70);
+        return hslToHex(0, 10, 70);
     }
 
     if (!scope) {
@@ -50,20 +60,26 @@ var stringToColour = function (data, highlight = false) {
             let h = hash(module) % 360;
             let s = hash(scope) % 10;
             let isPy = module.endsWith(".py");
-            return hslToHex(h >= 0 ? h : -h, (isPy ? 60 : 20) + s, highlight ? 80 : 60);
+            return hslToHex(h >= 0 ? h : -h, (isPy ? 60 : 20) + s, 60);
     }
 
-    return hslToHex(hue, 0 + sat, highlight ? 90 : 70);
+    return hslToHex(hue, 0 + sat, 70);
 };
 
+/** @param {any} obj */
 function isEmpty(obj) {
     return obj && Object.keys(obj).length === 0 && obj.constructor === Object;
 }
 
+/** @param {string} text */
 function esc(text) {
     return text.replace("<", "&lt;").replace(">", "&gt;");
 }
 
+/**
+ * @param {any} d
+ * @param {any} parent
+ */
 function timeLabel(d, parent) {
     return (
         esc(d.data.name) + " 🕘 " + d.data.value.toString() +
@@ -73,6 +89,10 @@ function timeLabel(d, parent) {
 }
 
 
+/**
+ * @param {any} node
+ * @param {string} parentKey
+ */
 function addPathKeys(node, parentKey) {
     var myKey = parentKey ? parentKey + '/' + node.name : node.name;
     if (node.data) { node.data.pathKey = myKey; }
@@ -84,6 +104,7 @@ function addPathKeys(node, parentKey) {
 }
 
 
+/** @param {any} data */
 function flameGraph(data) {
     if (!data || isEmpty(data)) {
         return;
@@ -96,17 +117,14 @@ function flameGraph(data) {
         }
     }
 
-    // @ts-ignore
-    var flameGraph = flamegraph()
-        .width(document.getElementById('chart').clientWidth)
+    var fg = flamegraph()
+        .width(/** @type {HTMLElement} */ (document.getElementById('chart')).clientWidth)
         .transitionDuration(250)
         .minFrameSize(0)
         .transitionEase(d3.easeCubic)
         .inverted(true)
         .cellHeight(24)
-        .label(function (d) {
-            var c = "";
-            for (var e in d) { c += " " + e; }
+        .label(function (/** @type {any} */ d) {
             var parent = d;
             try {
                 while (parent.parent.parent) {
@@ -119,27 +137,31 @@ function flameGraph(data) {
             return timeLabel(d, parent);
         });
 
-    flameGraph.setWidth = function (width) {
-        flameGraph.width(width);
+    fg.setWidth = function (/** @type {number} */ width) {
+        fg.width(width);
         d3.select("#chart svg").style("width", width);
-        flameGraph.resetZoom();
+        if (zoomedNode) {
+            fg.zoomTo(zoomedNode);
+        } else {
+            fg.resetZoom();
+        }
     };
 
-    flameGraph.setColorMapper(function (d, originalColor) {
+    fg.setColorMapper(function (/** @type {any} */ d) {
         if (!isNaN(+d.data.name)) {
             return '#808080';
         }
-        // return stringToColour(d.data.name, d.highlight);
         return d.highlight ? "#F620F6" : stringToColour(d.data);
     });
 
-    flameGraph.setDetailsElement(document.getElementById("footer"));
+    fg.setDetailsElement(document.getElementById("footer"));
 
-    flameGraph.onClick(function (d) {
+    fg.onClick(function (/** @type {any} */ d) {
+        zoomedNode = d;
         vscode.postMessage(d.data.data);
     });
 
-    flameGraph.setSearchMatch(function (d, term) {
+    fg.setSearchMatch(function (/** @type {any} */ d, /** @type {any} */ term) {
         if (searchMode === 'path') {
             return !!(d.data.data && d.data.data.pathKey === term);
         }
@@ -148,38 +170,40 @@ function flameGraph(data) {
 
     d3.select("#chart")
         .datum(data)
-        .call(flameGraph);
+        .call(fg);
 
-    window.addEventListener('resize', () => { flameGraph.setWidth(document.getElementById('chart').clientWidth); });
+    window.addEventListener('resize', () => { fg.setWidth(/** @type {HTMLElement} */ (document.getElementById('chart')).clientWidth); });
 
-    flameGraph.setWidth(document.getElementById('chart').clientWidth);
+    fg.setWidth(/** @type {HTMLElement} */ (document.getElementById('chart')).clientWidth);
 
-    return flameGraph;
+    return fg;
 }
 
 
+/** @param {any} meta */
 function setMetadata(meta) {
     if (!meta || isEmpty(meta)) {
         return;
     }
 
-    let modeSpan = document.getElementById("mode");
+    const modeSpan = /** @type {HTMLElement} */ (document.getElementById("mode"));
+    const header = /** @type {HTMLElement} */ (document.getElementById("header"));
     let mode;
     switch (meta.mode) {
         case "cpu":
             mode = "CPU Time Profile";
             document.body.style.backgroundColor = "rgba(127, 0, 0, .15)";
-            document.getElementById("header").style.backgroundColor = "rgba(192, 64, 64, .8)";
+            header.style.backgroundColor = "rgba(192, 64, 64, .8)";
             break;
         case "wall":
             mode = "Wall Time Profile";
             document.body.style.backgroundColor = "rgba(127, 127, 0, .15)";
-            document.getElementById("header").style.backgroundColor = "rgba(192, 192, 64, .8)";
+            header.style.backgroundColor = "rgba(192, 192, 64, .8)";
             break;
         case "memory":
             mode = "Memory Allocations Profile";
             document.body.style.backgroundColor = "rgba(0, 127, 0, .15)";
-            document.getElementById("header").style.backgroundColor = "rgba(64, 192, 64, .8)";
+            header.style.backgroundColor = "rgba(64, 192, 64, .8)";
             break;
 
         default:
@@ -190,6 +214,7 @@ function setMetadata(meta) {
 
 
 var searchMode = 'text'; // 'text' | 'path'
+/** @type {any} */ var zoomedNode = null;
 
 const state = vscode.getState();
 if (state) {
@@ -202,10 +227,25 @@ window.addEventListener('message', event => {
     if (event.data.focus) {
         var focusKey = event.data.focus;
         searchMode = 'path';
+        // Reset first so hidden/removed nodes are restored to the DOM before searching
+        graph.resetZoom();
         graph.search(focusKey);
-        d3.select('#chart').selectAll('g').each(function (d) {
+        d3.select('#chart').selectAll('g').each(/** @this {Element} */ function (/** @type {any} */ d) {
             if (d.data.data && d.data.data.pathKey === focusKey) {
+                zoomedNode = d;
                 graph.zoomTo(d);
+                // Scroll the frame to the centre of the visible area after the transition
+                var gEl = this;
+                setTimeout(function () {
+                    var rectEl = gEl.querySelector('rect');
+                    if (!rectEl) { return; }
+                    var headerEl = document.getElementById('header');
+                    var headerHeight = headerEl ? headerEl.offsetHeight : 0;
+                    var bounding = rectEl.getBoundingClientRect();
+                    var frameCenter = bounding.top + bounding.height / 2;
+                    var visibleCenter = headerHeight + (window.innerHeight - headerHeight) / 2;
+                    window.scrollBy({ top: frameCenter - visibleCenter, behavior: 'instant' });
+                }, 260);
                 return; // d3 each doesn't have break; first match is enough
             }
         });
@@ -220,6 +260,7 @@ window.addEventListener('message', event => {
         vscode.setState(event.data);
     }
     else if (event.data === "reset") {
+        zoomedNode = null;
         graph.resetZoom();
         graph.clear();
     }
@@ -230,10 +271,28 @@ window.addEventListener('message', event => {
 });
 
 document.addEventListener('keydown', (event) => {
-    var name = event.key;
-    var code = event.code;
-    // Alert the key name and key code on keydown
-    vscode.postMessage({ "event": "keydown", "name": name });
+    vscode.postMessage({ "event": "keydown", "name": event.key });
 }, false);
+
+function onOpen() {
+    vscode.postMessage("open");
+}
+
+(function () {
+    var searchBox = /** @type {HTMLInputElement} */ (document.getElementById('search-box'));
+    if (!searchBox) { return; }
+    searchBox.addEventListener('input', function () {
+        if (!graph) { return; }
+        searchMode = 'text';
+        if (searchBox.value) {
+            graph.search(searchBox.value);
+        } else {
+            graph.clear();
+        }
+    });
+    searchBox.addEventListener('keydown', function (e) {
+        e.stopPropagation(); // prevent the global keydown handler from firing
+    });
+})();
 
 vscode.postMessage("initialized");

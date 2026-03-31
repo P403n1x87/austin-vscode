@@ -46,7 +46,7 @@ export class TopStats {
     public callees: Map<string, TopStats> = new Map();
     public callers: Map<string, TopStats> = new Map();
     public callerContributions: Map<string, number> = new Map();
-    public lines: Set<number> = new Set();
+    public minLine: number = 0;
 
     public constructor(scope: string | null = null, module: string | null = null) {
         this.scope = scope;
@@ -126,7 +126,7 @@ export class AustinStats implements AustinStats {
             }
             let topStats = stats.get(key)!;
             topStats.total += metric;
-            topStats.lines.add(fo.line);
+            if (fo.line > 0 && (topStats.minLine === 0 || fo.line < topStats.minLine)) { topStats.minLine = fo.line; }
             if (caller) {
                 const callerKey = caller.key();
                 if (!topStats.callers.has(callerKey)) {
@@ -268,7 +268,7 @@ export class AustinStats implements AustinStats {
         frameList.forEach((fo, idx) => {
             const key = `${fo.module}:${fo.scope}`;
             const callee = current.callees.getDefault(key, () => new TopStats(fo.scope, fo.module));
-            callee.lines.add(fo.line);
+            if (fo.line > 0 && (callee.minLine === 0 || fo.line < callee.minLine)) { callee.minLine = fo.line; }
             callee.total += metric;
             if (idx === frameList.length - 1) {
                 callee.own += metric;

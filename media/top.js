@@ -7,11 +7,18 @@
     let expanded = new Set();
     let idCounter = 0;
 
+    const loading = document.getElementById('loading');
+
     window.addEventListener('message', event => {
         const message = event.data;
-        if (message.top !== undefined) {
+        if (message.loading) {
+            loading.classList.add('active');
+        } else if (message.top !== undefined) {
+            loading.classList.remove('active');
             data = message.top;
             render();
+        } else if (message.callersFor !== undefined) {
+            insertLazyCallers(message.callersFor, message.callers);
         }
     });
 
@@ -56,12 +63,13 @@
         const tr = document.createElement('tr');
         tr.className = 'top-row';
         tr.dataset.rowId = rowId;
+        tr.dataset.level = '0';
+        tr.dataset.callerKey = item.key;
         if (hasCallers) { tr.dataset.expandable = '1'; }
         tr.innerHTML =
             numCell(item.own, 'own', fmt(item.own)) +
             numCell(item.total, 'total', fmt(item.total)) +
-            funcCell(item.scope, 0) +
-            modCell(item.module);
+            funcCell(item.scope, item.module, 0);
 
         tr.addEventListener('click', () => {
             if (item.module) { navigate(item.module, item.line); }
@@ -76,20 +84,21 @@
 
         for (const caller of callers) {
             const rowId = String(idCounter++);
-            const hasCallers = caller.callers && caller.callers.length > 0;
+            const hasCallers = (caller.callers && caller.callers.length > 0) || caller.callersPending;
 
             const tr = document.createElement('tr');
             tr.className = 'caller-row';
             tr.dataset.rowId = rowId;
             tr.dataset.parentId = parentId;
             tr.dataset.level = String(level);
+            tr.dataset.callerKey = caller.key;
             if (hasCallers) { tr.dataset.expandable = '1'; }
+            if (caller.callersPending) { tr.dataset.callersPending = '1'; }
             tr.style.display = 'none';
             tr.innerHTML =
                 contribCell(caller.contribution, fmt(caller.contribution)) +
                 numCell(caller.total, 'total', fmt(caller.total)) +
-                funcCell(caller.scope, level) +
-                modCell(caller.module);
+                funcCell(caller.scope, caller.module, level);
 
             tr.addEventListener('click', () => {
                 if (caller.module) { navigate(caller.module, caller.line); }
@@ -108,13 +117,91 @@
         if (isExpanded) {
             collapseDescendants(rowId);
             expanded.delete(rowId);
-            if (row) { row.dataset.open = ''; delete row.dataset.open; }
+            if (row) { delete row.dataset.open; }
         } else {
+            if (row && row.dataset.callersPending) {
+                vscode.postMessage({ requestCallers: {
+                    rowId,
+                    key: row.dataset.callerKey,
+                    ancestorKeys: collectAncestorKeys(row),
+                }});
+                return;
+            }
             document.querySelectorAll(`tr[data-parent-id="${rowId}"]`).forEach(tr => {
                 tr.style.display = '';
             });
             expanded.add(rowId);
             if (row) { row.dataset.open = '1'; }
+        }
+    }
+
+    function collectAncestorKeys(row) {
+        const keys = [];
+        let parentId = row.dataset.parentId;
+        while (parentId) {
+            const parentRow = document.querySelector(`tr[data-row-id="${parentId}"]`);
+            if (!parentRow) { break; }
+            if (parentRow.dataset.callerKey) { keys.push(parentRow.dataset.callerKey); }
+            parentId = parentRow.dataset.parentId;
+        }
+        return keys;
+    }
+
+    function insertLazyCallers(rowId, callers) {
+        const parentRow = document.querySelector(`tr[data-row-id="${rowId}"]`);
+        if (!parentRow) { return; }
+        const parentLevel = parseInt(parentRow.dataset.level || '0', 10);
+        delete parentRow.dataset.callersPending;
+
+        // Find insertion point: first row at same or lower level after the parent
+        let insertBefore = parentRow.nextElementSibling;
+        while (insertBefore) {
+            if (parseInt(insertBefore.dataset.level || '0', 10) <= parentLevel) { break; }
+            insertBefore = insertBefore.nextElementSibling;
+        }
+
+        const tbody = document.getElementById('tbody');
+        for (const caller of callers) {
+            insertCallerBefore(tbody, insertBefore, caller, rowId, parentLevel + 1);
+        }
+
+        // Expand the row
+        document.querySelectorAll(`tr[data-parent-id="${rowId}"]`).forEach(tr => {
+            tr.style.display = '';
+        });
+        expanded.add(rowId);
+        parentRow.dataset.open = '1';
+    }
+
+    function insertCallerBefore(tbody, refNode, caller, parentId, level) {
+        const rowId = String(idCounter++);
+        const hasCallers = (caller.callers && caller.callers.length > 0) || caller.callersPending;
+
+        const tr = document.createElement('tr');
+        tr.className = 'caller-row';
+        tr.dataset.rowId = rowId;
+        tr.dataset.parentId = parentId;
+        tr.dataset.level = String(level);
+        tr.dataset.callerKey = caller.key;
+        if (hasCallers) { tr.dataset.expandable = '1'; }
+        if (caller.callersPending) { tr.dataset.callersPending = '1'; }
+        tr.style.display = 'none';
+        tr.innerHTML =
+            contribCell(caller.contribution, fmt(caller.contribution)) +
+            numCell(caller.total, 'total', fmt(caller.total)) +
+            funcCell(caller.scope, caller.module, level);
+
+        tr.addEventListener('click', () => {
+            if (caller.module) { navigate(caller.module, caller.line); }
+            if (hasCallers) { toggleRow(rowId); }
+        });
+
+        tbody.insertBefore(tr, refNode || null);
+
+        if (!caller.callersPending && caller.callers) {
+            for (const child of caller.callers) {
+                insertCallerBefore(tbody, refNode, child, rowId, level + 1);
+            }
         }
     }
 
@@ -135,8 +222,9 @@
     function numCell(value, kind, label) {
         const w = Math.min(100, value * 100).toFixed(1);
         const c = statColor(value);
+        const fillStyle = c ? `width:${w}%;background:${c}` : `width:${w}%`;
         return `<td class="num"><div class="bar-row">` +
-            `<div class="bar-bg"><div class="bar-fill ${kind}" style="width:${w}%"></div></div>` +
+            `<div class="bar-bg"><div class="bar-fill ${kind}" style="${fillStyle}"></div></div>` +
             `<span class="pct"${c ? ` style="color:${c}"` : ''}>${label}%</span>` +
             `</div></td>`;
     }
@@ -144,20 +232,21 @@
     function contribCell(value, label) {
         const w = Math.min(100, value * 100).toFixed(1);
         const c = statColor(value);
+        const fillStyle = c ? `width:${w}%;background:${c}` : `width:${w}%`;
         return `<td class="num" title="% of parent&#39;s time attributed to this caller">` +
             `<div class="bar-row">` +
-            `<div class="bar-bg"><div class="bar-fill contrib" style="width:${w}%"></div></div>` +
+            `<div class="bar-bg"><div class="bar-fill contrib" style="${fillStyle}"></div></div>` +
             `<span class="pct"${c ? ` style="color:${c}"` : ''}>${label}%</span>` +
             `</div></td>`;
     }
 
-    function funcCell(scope, level) {
+    function funcCell(scope, module, level) {
         const indent = level * 10;
-        return `<td class="func" style="padding-left:${indent + 6}px" title="${esc(scope)}">${esc(scope || '')}</td>`;
-    }
-
-    function modCell(module) {
-        return `<td class="mod" title="${esc(module)}">${esc(basename(module || ''))}</td>`;
+        const mod = module ? basename(module) : '';
+        return `<td class="func" style="padding-left:${indent + 6}px">` +
+            `<span class="scope-name" title="${esc(scope)}">${esc(scope || '')}</span>` +
+            (mod ? `<span class="scope-module" title="${esc(module)}">${esc(mod)}</span>` : '') +
+            `</td>`;
     }
 
     function statColor(value) {
@@ -186,6 +275,10 @@
     function navigate(module, line) {
         vscode.postMessage({ module, line });
     }
+
+    document.getElementById('collapse-all').addEventListener('click', () => {
+        if (data.length > 0) { render(); }
+    });
 
     // ---- sortable headers ----
 

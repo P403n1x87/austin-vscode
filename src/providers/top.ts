@@ -10,6 +10,7 @@ interface CallerNode {
     contribution: number;
     line: number;
     callers: CallerNode[];
+    callersPending?: boolean;
 }
 
 interface TopItemData {
@@ -58,9 +59,22 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
             if (data.module !== undefined) {
                 vscode.commands.executeCommand('austin-vscode.openSourceAtLine', data.module, data.line || 0);
             }
+            if (data.requestCallers && this._stats) {
+                const { rowId, key, ancestorKeys } = data.requestCallers;
+                const topStats = this._stats.top.get(key);
+                if (topStats) {
+                    const path = new Set([key, ...(ancestorKeys as string[])]);
+                    const callers = this._serializeCallers(topStats, path, 3);
+                    this._view?.webview.postMessage({ callersFor: rowId, callers });
+                }
+            }
         });
 
         webviewView.webview.html = this._getHtml(webviewView.webview);
+    }
+
+    public showLoading() {
+        this._view?.webview.postMessage({ loading: true });
     }
 
     public refresh(stats: AustinStats) {
@@ -70,17 +84,25 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private _serializeCallers(stats: TopStats, path: Set<string>): CallerNode[] {
+    private _serializeCallers(stats: TopStats, path: Set<string>, depth: number): CallerNode[] {
         if (stats.total < 1e-10) { return []; }
 
         const result: CallerNode[] = [];
         for (const [key, callerStats] of stats.callers) {
             const rawContrib = stats.callerContributions.get(key) ?? 0;
             const fraction = rawContrib / stats.total;
-            const newPath = new Set(path).add(key);
-            const callerCallers = path.has(key)
-                ? []
-                : this._serializeCallers(callerStats, newPath);
+            const isCycle = path.has(key);
+            let callerCallers: CallerNode[] = [];
+            let callersPending = false;
+            if (!isCycle) {
+                if (depth <= 0) {
+                    callersPending = callerStats.callers.size > 0;
+                } else {
+                    path.add(key);
+                    callerCallers = this._serializeCallers(callerStats, path, depth - 1);
+                    path.delete(key);
+                }
+            }
             result.push({
                 key,
                 scope: callerStats.scope,
@@ -88,8 +110,9 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
                 own: callerStats.own,
                 total: callerStats.total,
                 contribution: fraction,
-                line: callerStats.lines.size > 0 ? Math.min(...callerStats.lines) : 0,
+                line: callerStats.minLine,
                 callers: callerCallers,
+                callersPending,
             });
         }
         return result.sort((a, b) => b.contribution - a.contribution);
@@ -106,8 +129,8 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
                     module: s.module,
                     own: s.own,
                     total: s.total,
-                    line: s.lines.size > 0 ? Math.min(...s.lines) : 0,
-                    callers: this._serializeCallers(s, new Set([key])),
+                    line: s.minLine,
+                    callers: this._serializeCallers(s, new Set([key]), 3),
                 };
             });
         this._view!.webview.postMessage({ top });
@@ -132,11 +155,12 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
             font-family: var(--vscode-font-family, sans-serif);
             color: var(--vscode-foreground);
             background: transparent;
+            overflow-x: hidden;
         }
         table {
             width: 100%;
             border-collapse: collapse;
-            table-layout: fixed;
+            table-layout: auto;
         }
         thead {
             position: sticky;
@@ -149,7 +173,7 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
             padding: 5px 6px;
             border-bottom: 1px solid var(--vscode-panel-border, #444);
             font-weight: 600;
-            font-size: 11px;
+            font-size: 0.9em;
             color: var(--vscode-foreground);
             white-space: nowrap;
             overflow: hidden;
@@ -181,66 +205,119 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
             background: var(--vscode-list-inactiveSelectionBackground, rgba(128,128,128,0.08));
             border-bottom-color: transparent;
         }
-        col.own   { width: 88px; }
-        col.total { width: 88px; }
-        col.func  { width: auto; }
-        col.mod   { width: 100px; }
+        col.func  { width: 100%; }
         .bar-row { display: flex; align-items: center; gap: 4px; }
         .bar-bg {
-            flex: 1;
+            flex: 0 0 24px;
             height: 5px;
             background: var(--vscode-progressBar-background, rgba(128,128,128,0.2));
             border-radius: 3px;
             overflow: hidden;
-            min-width: 14px;
         }
-        .bar-fill { height: 5px; border-radius: 3px; }
-        .bar-fill.own    { background: #c0392b; }
-        .bar-fill.total  { background: #e67e22; }
-        .bar-fill.contrib { background: #3794ff; }
+        .bar-fill { height: 5px; border-radius: 3px; background: var(--vscode-descriptionForeground); opacity: 0.4; }
+        .bar-fill[style] { opacity: 1; }
         .pct {
             width: 40px;
             text-align: right;
             font-variant-numeric: tabular-nums;
             font-family: var(--vscode-editor-font-family, monospace);
             flex-shrink: 0;
-            font-size: 11px;
+            font-size: var(--vscode-editor-font-size, 1em);
         }
-        .func { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
-        .mod  { color: var(--vscode-descriptionForeground); font-size: 11px; }
+        .func { font-family: var(--vscode-editor-font-family, monospace); font-size: var(--vscode-editor-font-size, 1em); }
+        .scope-name {
+            font-family: var(--vscode-editor-font-family, monospace);
+            font-size: var(--vscode-editor-font-size, 1em);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .scope-module {
+            margin-left: 6px;
+            font-size: 0.85em;
+            color: var(--vscode-descriptionForeground);
+            white-space: nowrap;
+        }
         .caller-row > td {
-            font-size: 11px;
+            font-size: 0.9em;
             border-bottom-color: transparent;
         }
         /* depth guide lines: left border on the func cell steps in per level */
         .caller-row .func {
             border-left: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
-            font-size: 11px;
+            font-size: 0.9em;
         }
-        .caller-row .pct { font-size: 10px; width: 36px; }
+        .caller-row .pct { font-size: 0.85em; width: 36px; }
+        .toolbar {
+            display: flex;
+            align-items: center;
+            padding: 4px 6px;
+            border-bottom: 1px solid var(--vscode-panel-border, #444);
+            user-select: none;
+        }
+        .toolbar-btn {
+            margin-left: auto;
+            background: none;
+            border: none;
+            padding: 2px;
+            cursor: pointer;
+            color: var(--vscode-descriptionForeground);
+            display: flex;
+            align-items: center;
+            border-radius: 3px;
+            opacity: 0.7;
+        }
+        .toolbar-btn:hover { opacity: 1; background: var(--vscode-list-hoverBackground); }
         .empty {
             padding: 24px 16px;
             color: var(--vscode-descriptionForeground);
             text-align: center;
             font-style: italic;
         }
+        #loading {
+            display: none;
+            position: fixed;
+            inset: 0;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.12);
+            z-index: 10;
+        }
+        #loading.active { display: flex; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(128,128,128,0.25);
+            border-top-color: var(--vscode-progressBar-background, #007acc);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
     </style>
 </head>
 <body>
+    <div id="loading"><div class="spinner"></div></div>
+    <div class="toolbar">
+        <button class="toolbar-btn" id="collapse-all" title="Collapse all">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                <rect x="2" y="2" width="12" height="1.5" rx="0.75"/>
+                <rect x="2" y="12.5" width="12" height="1.5" rx="0.75"/>
+                <path d="M5.5 5L8 7.5L10.5 5M5.5 11L8 8.5L10.5 11" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+    </div>
     <div id="empty" class="empty">No profiling data loaded.</div>
     <table id="table" style="display:none">
         <colgroup>
             <col class="own">
             <col class="total">
             <col class="func">
-            <col class="mod">
         </colgroup>
         <thead>
             <tr>
                 <th data-col="own" class="desc">Own</th>
                 <th data-col="total">Total</th>
-                <th data-col="scope">Function</th>
-                <th data-col="module">Module</th>
+                <th data-col="scope">Scope</th>
             </tr>
         </thead>
         <tbody id="tbody"></tbody>
