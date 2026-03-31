@@ -153,6 +153,10 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
             font-size: 0.9em;
             color: var(--vscode-descriptionForeground);
             user-select: none;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: var(--vscode-sideBar-background, var(--vscode-editor-background));
         }
         .toolbar label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
         .toolbar input[type=checkbox] { cursor: pointer; accent-color: var(--vscode-focusBorder); }
@@ -176,7 +180,7 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         }
         thead {
             position: sticky;
-            top: 0;
+            top: var(--toolbar-h, 32px);
             background: var(--vscode-sideBar-background, var(--vscode-editor-background));
             z-index: 1;
         }

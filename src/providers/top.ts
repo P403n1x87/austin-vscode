@@ -164,7 +164,7 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
         }
         thead {
             position: sticky;
-            top: 0;
+            top: var(--toolbar-h, 32px);
             background: var(--vscode-sideBar-background, var(--vscode-editor-background));
             z-index: 1;
         }
@@ -251,12 +251,57 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
         .toolbar {
             display: flex;
             align-items: center;
+            gap: 4px;
             padding: 4px 6px;
             border-bottom: 1px solid var(--vscode-panel-border, #444);
             user-select: none;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: var(--vscode-sideBar-background, var(--vscode-editor-background));
         }
+        .filter-wrap {
+            flex: 1;
+            min-width: 0;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        #filter-input {
+            width: 100%;
+            background: rgba(128,128,128,0.1);
+            border: 1px solid rgba(128,128,128,0.25);
+            border-radius: 3px;
+            color: var(--vscode-foreground);
+            font-size: 0.9em;
+            font-family: inherit;
+            padding: 2px 22px 2px 6px;
+            height: 20px;
+            outline: none;
+        }
+        #filter-input:focus { border-color: var(--vscode-focusBorder, rgba(0,120,215,0.8)); }
+        #filter-input::placeholder { color: var(--vscode-descriptionForeground); opacity: 0.6; }
+        #filter-clear {
+            position: absolute;
+            right: 3px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            padding: 0;
+            border: none;
+            background: none;
+            cursor: pointer;
+            color: var(--vscode-descriptionForeground);
+            border-radius: 2px;
+            opacity: 0.6;
+            line-height: 1;
+        }
+        #filter-clear:hover { opacity: 1; background: var(--vscode-list-hoverBackground); }
+        #filter-clear.visible { display: flex; }
         .toolbar-btn {
-            margin-left: auto;
+            flex-shrink: 0;
             background: none;
             border: none;
             padding: 2px;
@@ -298,6 +343,15 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
 <body>
     <div id="loading"><div class="spinner"></div></div>
     <div class="toolbar">
+        <div class="filter-wrap">
+            <input id="filter-input" type="text" placeholder="Filter…" autocomplete="off" spellcheck="false" />
+            <button id="filter-clear" title="Clear filter">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <line x1="1.5" y1="1.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    <line x1="8.5" y1="1.5" x2="1.5" y2="8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+            </button>
+        </div>
         <button class="toolbar-btn" id="collapse-all" title="Collapse all">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                 <rect x="2" y="2" width="12" height="1.5" rx="0.75"/>
