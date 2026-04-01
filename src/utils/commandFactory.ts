@@ -17,7 +17,8 @@ export function getAustinCommand(
     austinArgs: string[] | undefined = undefined,
     interval: number | undefined = undefined,
     mode: AustinMode | undefined = undefined,
-    envFile: string | undefined = undefined
+    envFile: string | undefined = undefined,
+    pid: number | undefined = undefined,
 ): AustinCommandArguments {
     const settings = AustinRuntimeSettings.get().settings;
     let _args: string[] = [];
@@ -38,11 +39,13 @@ export function getAustinCommand(
     if (_mode === AustinMode.CpuTime) { _args.push("-c"); }
     if (_mode === AustinMode.Memory) { _args.push("-m"); }
     if (austinArgs) { _args = _args.concat(austinArgs); }
-    if (pythonFile) {
+    if (pid !== undefined) {
+        _args.push("-p", `${pid}`);
+    } else if (pythonFile) {
         _args.push(getConfiguredInterpreter());
         _args.push(pythonFile);
+        if (pythonArgs) { _args = _args.concat(pythonArgs); }
     }
-    if (pythonArgs) { _args = _args.concat(pythonArgs); }
 
     return {
         cmd: cmd,

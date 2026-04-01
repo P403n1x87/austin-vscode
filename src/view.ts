@@ -374,7 +374,8 @@ function setLinesStats(lineStats: Map<number, [number, number]>, overallTotal: n
 }
 
 export function setLinesHeat(locations: Map<string, [FrameObject, number, number]>, stats: AustinStats) {
-    clearDecorations();
+    const oldDecorators = decorators;
+    decorators = [];
 
     const overallTotal = stats.overallTotal;
     const localTotal = Array.from(locations.values()).map(v => v[1]).reduce((s, c) => s + c, 0);
@@ -398,6 +399,8 @@ export function setLinesHeat(locations: Map<string, [FrameObject, number, number
     });
 
     setLinesStats(lineStats, overallTotal, localTotal, mode);
+
+    oldDecorators.forEach(d => d.dispose());
 }
 
 

@@ -6,6 +6,7 @@
     let sortAsc = false;
     let filterTerm = '';
     let expanded = new Set();
+    let expandedKeys = new Set();
     let idCounter = 0;
 
     const loading     = document.getElementById('loading');
@@ -19,6 +20,7 @@
             filterTerm = '';
             filterInput.value = '';
             filterClear.classList.remove('visible');
+            expandedKeys.clear();
             render();
             loading.classList.add('active');
         } else if (message.top !== undefined) {
@@ -69,6 +71,22 @@
             appendTopRow(tbody, item, rowId);
             appendCallerRows(tbody, item.callers, rowId, 1);
         }
+
+        restoreExpanded();
+    }
+
+    function restoreExpanded() {
+        if (expandedKeys.size === 0) { return; }
+        document.querySelectorAll('tr[data-expandable][data-caller-key]').forEach(tr => {
+            const k = tr.dataset.callerKey;
+            if (!k || !expandedKeys.has(k)) { return; }
+            const rowId = tr.dataset.rowId;
+            document.querySelectorAll(`tr[data-parent-id="${rowId}"]`).forEach(child => {
+                child.style.display = '';
+            });
+            expanded.add(rowId);
+            tr.dataset.open = '1';
+        });
     }
 
     function appendTopRow(tbody, item, rowId) {
@@ -131,7 +149,10 @@
         if (isExpanded) {
             collapseDescendants(rowId);
             expanded.delete(rowId);
-            if (row) { delete row.dataset.open; }
+            if (row) {
+                delete row.dataset.open;
+                if (row.dataset.callerKey) { expandedKeys.delete(row.dataset.callerKey); }
+            }
         } else {
             if (row && row.dataset.callersPending) {
                 vscode.postMessage({ requestCallers: {
@@ -145,7 +166,10 @@
                 tr.style.display = '';
             });
             expanded.add(rowId);
-            if (row) { row.dataset.open = '1'; }
+            if (row) {
+                row.dataset.open = '1';
+                if (row.dataset.callerKey) { expandedKeys.add(row.dataset.callerKey); }
+            }
         }
     }
 
@@ -185,6 +209,7 @@
         });
         expanded.add(rowId);
         parentRow.dataset.open = '1';
+        if (parentRow.dataset.callerKey) { expandedKeys.add(parentRow.dataset.callerKey); }
     }
 
     function insertCallerBefore(tbody, refNode, caller, parentId, level) {
@@ -228,6 +253,7 @@
                 expanded.delete(childId);
                 delete tr.dataset.open;
             }
+            if (tr.dataset.callerKey) { expandedKeys.delete(tr.dataset.callerKey); }
         });
     }
 

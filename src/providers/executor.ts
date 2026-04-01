@@ -31,6 +31,8 @@ function resolveArgs(args: string[]): string[] {
 
 export class AustinCommandExecutor implements vscode.Pseudoterminal {
   private austinProcess: ChildProcess | undefined;
+  private _killed: boolean = false;
+  private _processExited: boolean = false;
   result: number = 0;
 
   constructor(
@@ -91,15 +93,24 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
 
       let lastTotal = 0;
       const refreshInterval = setInterval(() => {
-        if (this.stats.overallTotal > lastTotal) {
+        if (!this.stats.paused && this.stats.overallTotal > lastTotal) {
           lastTotal = this.stats.overallTotal;
           this.stats.refresh();
         }
       }, 1000);
 
       this.austinProcess.on("close", (code) => {
+        this._processExited = true;
         clearInterval(refreshInterval);
-        if (code !== 0) {
+        if (this._killed) {
+          // Intentional detach: we sent a kill signal before the process exited
+          this.writeEmitter.fire("Austin detached.\r\n");
+          this.closeEmitter.fire(0);
+          const label = fileName ?? "process";
+          vscode.window.showInformationMessage(`Austin detached from ${label}.`);
+          parser.finalize();
+          this.stats.refresh();
+        } else if (code !== 0) {
           this.writeEmitter.fire(`austin process exited with code ${code}\r\n`);
           this.result = code!;
           this.closeEmitter.fire(code!);
@@ -127,6 +138,9 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
   close(): void {
     // The terminal has been closed. Shutdown the build.
     if (this.austinProcess && !this.austinProcess.killed) {
+      if (!this._processExited) {
+        this._killed = true;
+      }
       this.austinProcess.kill();
     }
   }

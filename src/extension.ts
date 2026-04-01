@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { clearDecorations, formatInterval } from './view';
+import { clearDecorations, formatInterval, setLinesHeat } from './view';
 import { FlameGraphViewProvider } from './providers/flamegraph';
 import { AustinController } from './controller';
 import { AustinStats } from './model';
@@ -15,9 +15,20 @@ export function activate(context: vscode.ExtensionContext) {
 		clearDecorations();
 	});
 
+	const stats = new AustinStats();
+
+	context.subscriptions.push(
+		vscode.window.onDidChangeActiveTextEditor((editor) => {
+			if (editor?.document.uri.scheme === "file") {
+				const lines = stats.locationMap.get(editor.document.uri.fsPath);
+				if (lines) { setLinesHeat(lines, stats); }
+				else { clearDecorations(); }
+			}
+		})
+	);
+
 	const output = vscode.window.createOutputChannel("Austin");
 
-	const stats = new AustinStats();
 	const austinProfileProvider = new AustinProfileTaskProvider(stats, output);
 	const controller = new AustinController(stats, austinProfileProvider, output);
 
@@ -31,6 +42,13 @@ export function activate(context: vscode.ExtensionContext) {
 	stats.registerAfterCallback((stats) => flameGraphViewProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => topProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => callStackProvider.refresh(stats));
+	stats.registerAfterCallback((stats) => {
+		const editor = vscode.window.activeTextEditor;
+		if (editor?.document.uri.scheme === "file") {
+			const lines = stats.locationMap.get(editor.document.uri.fsPath);
+			if (lines) { setLinesHeat(lines, stats); }
+		}
+	});
 
 	flameGraphViewProvider.onFrameSelected((pathKey) => callStackProvider.focusPath(pathKey));
 	callStackProvider.onFrameSelected((pathKey) => flameGraphViewProvider.focusFrame(pathKey));
@@ -61,6 +79,12 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
+		vscode.commands.registerCommand('austin-vscode.attach', () => {
+			controller.attachProcess();
+		})
+	);
+
+	context.subscriptions.push(
 		vscode.commands.registerCommand('austin-vscode.load', () => {
 			controller.openSampleFile();
 		})
@@ -69,6 +93,63 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('austin-vscode.openSourceAtLine', (module: string, line: number) => {
 			controller.openSourceFileAtLine(module, line);
+		})
+	);
+
+	// ---- Detach status bar item (shown while a profiling session is active) ----
+	const detachStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 200);
+	detachStatusBarItem.command = "austin-vscode.detach";
+	detachStatusBarItem.text = "$(debug-disconnect) Detach Austin";
+	detachStatusBarItem.tooltip = "Stop Austin and detach from the process";
+	detachStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('austin-vscode.detach', () => {
+			controller.detach();
+		})
+	);
+
+	// ---- Pause/resume status bar item ----
+	const pauseStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 199);
+	pauseStatusBarItem.command = "austin-vscode.togglePause";
+	pauseStatusBarItem.text = "$(debug-pause) Pause";
+	pauseStatusBarItem.tooltip = "Pause UI refreshes (data collection continues)";
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('austin-vscode.togglePause', () => {
+			stats.paused = !stats.paused;
+			if (stats.paused) {
+				pauseStatusBarItem.text = "$(debug-continue) Resume";
+				pauseStatusBarItem.tooltip = "Resume UI refreshes";
+			} else {
+				pauseStatusBarItem.text = "$(debug-pause) Pause";
+				pauseStatusBarItem.tooltip = "Pause UI refreshes (data collection continues)";
+				stats.refresh();
+			}
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.tasks.onDidStartTask((e) => {
+			if (e.execution.task.definition.type === "austin") {
+				detachStatusBarItem.show();
+				pauseStatusBarItem.show();
+				flameGraphViewProvider.showDetachButton();
+			}
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.tasks.onDidEndTask((e) => {
+			if (e.execution.task.definition.type === "austin") {
+				controller.clearCurrentExecution(e.execution);
+				detachStatusBarItem.hide();
+				pauseStatusBarItem.hide();
+				stats.paused = false;
+				pauseStatusBarItem.text = "$(debug-pause) Pause";
+				pauseStatusBarItem.tooltip = "Pause UI refreshes (data collection continues)";
+				flameGraphViewProvider.showOpenButton();
+			}
 		})
 	);
 
