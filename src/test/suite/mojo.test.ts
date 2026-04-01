@@ -1,6 +1,8 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
 import { MojoParser } from '../../utils/mojo';
 import { AustinStats } from '../../model';
+import { testDataPath } from './helpers';
 import '../../stringExtension';
 import '../../mapExtension';
 
@@ -506,5 +508,48 @@ suite('MojoParser — multiple samples', () => {
         ];
         const stats = parseWith(bytes);
         assert.strictEqual(stats.overallTotal, 30);
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// Regression test — real test.mojo file (invalid-frame back-attribution)
+// ---------------------------------------------------------------------------
+suite('MojoParser — real file regression', () => {
+
+    test('parses test.mojo without throwing (invalid-frame back-attribution)', () => {
+        const mojoPath = testDataPath('test.mojo');
+        const data = fs.readFileSync(mojoPath);
+        const stats = new AustinStats();
+        // Must not throw "Received unknown MOJO event"
+        assert.doesNotThrow(() => stats.readFromMojoStream(data.values() as IterableIterator<number>, 'test.mojo'));
+    });
+
+    test('test.mojo produces correct metadata', () => {
+        const mojoPath = testDataPath('test.mojo');
+        const data = fs.readFileSync(mojoPath);
+        const stats = new AustinStats();
+        stats.readFromMojoStream(data.values() as IterableIterator<number>, 'test.mojo');
+        assert.strictEqual(stats.metadata.get('mode'), 'wall');
+        assert.strictEqual(stats.metadata.get('austin'), '3.4.0');
+        assert.strictEqual(stats.metadata.get('interval'), '100');
+    });
+
+    test('test.mojo overallTotal matches sum of sample durations', () => {
+        const mojoPath = testDataPath('test.mojo');
+        const data = fs.readFileSync(mojoPath);
+        const stats = new AustinStats();
+        stats.readFromMojoStream(data.values() as IterableIterator<number>, 'test.mojo');
+        assert.strictEqual(stats.overallTotal, 2044073);
+    });
+
+    test('test.mojo top entries include expected hotspot', () => {
+        const mojoPath = testDataPath('test.mojo');
+        const data = fs.readFileSync(mojoPath);
+        const stats = new AustinStats();
+        stats.readFromMojoStream(data.values() as IterableIterator<number>, 'test.mojo');
+        const hotspot = stats.top.get('/home/gabriele/Projects/austin/test/targets/target34.py:keep_cpu_busy')!;
+        assert.ok(hotspot, 'top hotspot entry should exist');
+        assert.ok(Math.abs(hotspot.own - 0.917) < 0.001, `own should be ~0.917, got ${hotspot.own}`);
     });
 });
