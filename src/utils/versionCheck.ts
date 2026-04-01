@@ -12,7 +12,7 @@ export class AustinVersionError extends Error {
 
 export function checkAustinVersion(austinPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
-        execFile(austinPath, ["--version"], (err, stdout, stderr) => {
+        execFile(austinPath, ["--version"], { shell: process.platform === "win32" }, (err, stdout, stderr) => {
             if (err) {
                 reject(new Error(`Failed to run '${austinPath} --version': ${err.message}`));
                 return;

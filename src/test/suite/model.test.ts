@@ -137,8 +137,8 @@ suite('AustinStats.update', () => {
         const inner = { module: '/m.py', scope: 'inner', line: 2 };
         stats.update(1, 'T1', [outer, inner], 100);
 
-        assert.strictEqual(stats.top.get('/m.py:outer')!.own, 0);
-        assert.strictEqual(stats.top.get('/m.py:inner')!.own, 100);
+        assert.strictEqual(stats.top.get('/m.py:outer')!.rawOwn, 0);
+        assert.strictEqual(stats.top.get('/m.py:inner')!.rawOwn, 100);
     });
 
     test('total time is accumulated on every frame in the stack', () => {
@@ -147,8 +147,8 @@ suite('AustinStats.update', () => {
         const inner = { module: '/m.py', scope: 'inner', line: 2 };
         stats.update(1, 'T1', [outer, inner], 100);
 
-        assert.strictEqual(stats.top.get('/m.py:outer')!.total, 100);
-        assert.strictEqual(stats.top.get('/m.py:inner')!.total, 100);
+        assert.strictEqual(stats.top.get('/m.py:outer')!.rawTotal, 100);
+        assert.strictEqual(stats.top.get('/m.py:inner')!.rawTotal, 100);
     });
 
     test('recursive frames are counted only once (no double-counting)', () => {
@@ -156,8 +156,8 @@ suite('AustinStats.update', () => {
         const frame = { module: '/m.py', scope: 'recursive', line: 5 };
         stats.update(1, 'T1', [frame, frame], 200);
 
-        assert.strictEqual(stats.top.get('/m.py:recursive')!.total, 200);
-        assert.strictEqual(stats.top.get('/m.py:recursive')!.own, 200);
+        assert.strictEqual(stats.top.get('/m.py:recursive')!.rawTotal, 200);
+        assert.strictEqual(stats.top.get('/m.py:recursive')!.rawOwn, 200);
     });
 
     test('locationMap is populated with module key', () => {
@@ -250,5 +250,90 @@ suite('AustinStats.readFromStream', () => {
         const stats = new AustinStats();
         stats.setMetadata('version', '3');
         assert.strictEqual(stats.metadata.get('version'), '3');
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// AustinStats.refresh — normalisation and idempotency
+// ---------------------------------------------------------------------------
+suite('AustinStats.refresh', () => {
+
+    test('normalises own and total as fractions after update', () => {
+        const stats = new AustinStats();
+        const outer = { module: '/m.py', scope: 'outer', line: 1 };
+        const inner = { module: '/m.py', scope: 'inner', line: 2 };
+        stats.update(1, 'T1', [outer, inner], 100);
+        stats.refresh();
+        assert.strictEqual(stats.top.get('/m.py:outer')!.total, 1.0);
+        assert.strictEqual(stats.top.get('/m.py:inner')!.total, 1.0);
+        assert.strictEqual(stats.top.get('/m.py:outer')!.own, 0.0);
+        assert.strictEqual(stats.top.get('/m.py:inner')!.own, 1.0);
+    });
+
+    test('refresh() is idempotent — calling it twice gives the same result', () => {
+        const stats = new AustinStats();
+        const frame = { module: '/m.py', scope: 'fn', line: 1 };
+        stats.update(1, 'T1', [frame], 200);
+        stats.refresh();
+        const afterFirst = stats.top.get('/m.py:fn')!.own;
+        stats.refresh();
+        const afterSecond = stats.top.get('/m.py:fn')!.own;
+        assert.strictEqual(afterFirst, afterSecond);
+    });
+
+    test('raw fields remain unchanged after refresh()', () => {
+        const stats = new AustinStats();
+        const frame = { module: '/m.py', scope: 'fn', line: 1 };
+        stats.update(1, 'T1', [frame], 300);
+        stats.refresh();
+        assert.strictEqual(stats.top.get('/m.py:fn')!.rawOwn, 300);
+        assert.strictEqual(stats.top.get('/m.py:fn')!.rawTotal, 300);
+    });
+
+    test('refresh() fires after-callbacks', () => {
+        const stats = new AustinStats();
+        let called = 0;
+        stats.registerAfterCallback(() => { called++; });
+        stats.update(1, 'T1', [], 10);
+        stats.refresh();
+        assert.strictEqual(called, 1);
+    });
+
+    test('registerOnceAfterCallback fires exactly once', () => {
+        const stats = new AustinStats();
+        let called = 0;
+        stats.registerOnceAfterCallback(() => { called++; });
+        stats.refresh();
+        stats.refresh();
+        assert.strictEqual(called, 1);
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// AustinStats.begin — session initialisation
+// ---------------------------------------------------------------------------
+suite('AustinStats.begin', () => {
+
+    test('begin() clears previously accumulated data', async () => {
+        const stats = await readStats('P1;T1;/a.py:f:1 100\n');
+        stats.begin('new.austin');
+        assert.strictEqual(stats.overallTotal, 0);
+        assert.strictEqual(stats.top.size, 0);
+    });
+
+    test('begin() sets the source to the new file name', () => {
+        const stats = new AustinStats();
+        stats.begin('profile.austin');
+        assert.strictEqual(stats.source, 'profile.austin');
+    });
+
+    test('begin() fires before-callbacks', () => {
+        const stats = new AustinStats();
+        let called = 0;
+        stats.registerBeforeCallback(() => { called++; });
+        stats.begin('x.austin');
+        assert.strictEqual(called, 1);
     });
 });

@@ -386,6 +386,12 @@ export class StreamingMojoParser {
                 break;
             }
             case MOJO_EVENT.stack: {
+                // Read all new state before committing the old sample.
+                // If any read throws IteratorDone mid-event, the offset rolls
+                // back to the tag byte and no state changes take effect.
+                const newPid = this.consumeVarInt();
+                const newIid = this.version! >= 3n ? this.consumeVarInt() : 0n;
+                const newTid = this.consumeString();
                 if (this.currentPid !== null) {
                     this.stats.update(
                         Number(this.currentPid),
@@ -395,10 +401,10 @@ export class StreamingMojoParser {
                     );
                     this.previousStacks.set(this.currentStackKey!, this.currentStack);
                 }
-                this.currentPid = this.consumeVarInt();
-                this.currentIid = this.version! >= 3n ? this.consumeVarInt() : 0n;
-                this.currentTid = this.consumeString();
-                this.currentStackKey = `${this.currentPid}:${this.currentIid}:${this.currentTid}`;
+                this.currentPid = newPid;
+                this.currentIid = newIid;
+                this.currentTid = newTid;
+                this.currentStackKey = `${newPid}:${newIid}:${newTid}`;
                 this.currentStack = [];
                 this.currentTimeMetric = null;
                 this.currentMemoryMetric = null;
