@@ -230,22 +230,17 @@ export class MojoParser {
                         break;
 
                     case MOJO_EVENT.frameReference:
-                        if (invalidFrame) {
-                            // Skip frames that are part of the invalid stack
-                            break;
-                        }
-
                         let key = `${currentPid}:${this.consumeVarInt()}`;
-                        currentStack.push(frameRefs.get(key)!);
+                        if (!invalidFrame) {
+                            currentStack.push(frameRefs.get(key)!);
+                        }
                         break;
 
                     case MOJO_EVENT.kernelFrame:
-                        if (invalidFrame) {
-                            // Skip frames that are part of the invalid stack
-                            break;
+                        let kernelFrame = this.consumeKernel();
+                        if (!invalidFrame) {
+                            currentStack.push(kernelFrame);
                         }
-
-                        currentStack.push(this.consumeKernel());
                         break;
 
                     case MOJO_EVENT.gc:
