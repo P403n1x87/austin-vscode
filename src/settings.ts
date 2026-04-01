@@ -19,14 +19,12 @@ export class AustinRuntimeSettings {
         }
         const austinInterval: number = AustinRuntimeSettings.config.get<number>("interval", DEFAULT_INTERVAL);
         const austinMode: AustinMode = AustinRuntimeSettings.config.get("mode", DEFAULT_MODE);
-        const austinBinaryMode: boolean = AustinRuntimeSettings.config.get("binaryMode", false);
         const austinLineStats: AustinLineStats = AustinRuntimeSettings.config.get("lineStats", DEFAULT_LINE_STATS);
 
         this.settings = {
             path: austinPath,
             mode: austinMode,
             interval: austinInterval,
-            binaryMode: austinBinaryMode,
             lineStats: austinLineStats
         };
     }
@@ -42,7 +40,7 @@ export class AustinRuntimeSettings {
     }
 
     public static setPath(newPath: string) {
-        AustinRuntimeSettings.config.update("path", newPath);
+        AustinRuntimeSettings.config.update("path", newPath, vscode.ConfigurationTarget.Global);
     }
 
     public static getInterval(): number {
@@ -50,7 +48,7 @@ export class AustinRuntimeSettings {
     }
 
     public static setInterval(newInterval: number) {
-        AustinRuntimeSettings.config.update("interval", newInterval);
+        AustinRuntimeSettings.config.update("interval", newInterval, vscode.ConfigurationTarget.Global);
     }
 
     public static getMode(): AustinMode {
@@ -58,15 +56,7 @@ export class AustinRuntimeSettings {
     }
 
     public static setMode(newMode: AustinMode) {
-        AustinRuntimeSettings.config.update("mode", newMode);
-    }
-
-    public static getBinaryMode(): boolean {
-        return AustinRuntimeSettings.get().settings.binaryMode;
-    }
-
-    public static setBinaryMode(newBinaryMode: boolean) {
-        AustinRuntimeSettings.config.update("binaryMode", newBinaryMode);
+        AustinRuntimeSettings.config.update("mode", newMode, vscode.ConfigurationTarget.Global);
     }
 
     public static getLineStats(): AustinLineStats {
@@ -74,6 +64,6 @@ export class AustinRuntimeSettings {
     }
 
     public static setLineStats(newLineStats: AustinLineStats) {
-        AustinRuntimeSettings.config.update("lineStats", newLineStats);
+        AustinRuntimeSettings.config.update("lineStats", newLineStats, vscode.ConfigurationTarget.Global);
     }
 }

@@ -4,6 +4,7 @@ import { AustinCommandArguments } from "../utils/commandFactory";
 
 import { ChildProcess, spawn } from "child_process";
 import { AustinStats } from "../model";
+import { StreamingMojoParser } from "../utils/mojo";
 import { clearDecorations, setLinesHeat } from "../view";
 
 import { DotenvPopulateInput, config } from "dotenv";
@@ -30,10 +31,7 @@ function resolveArgs(args: string[]): string[] {
 
 export class AustinCommandExecutor implements vscode.Pseudoterminal {
   private austinProcess: ChildProcess | undefined;
-  stderr: string | undefined;
-  stdout: string | undefined;
   result: number = 0;
-  buffer: Buffer = Buffer.alloc(0);
 
   constructor(
     private command: AustinCommandArguments,
@@ -48,30 +46,10 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
   private closeEmitter = new vscode.EventEmitter<number>();
   onDidClose?: vscode.Event<number> = this.closeEmitter.event;
 
-  private fileWatcher: vscode.FileSystemWatcher | undefined;
-
-  private showStats() {
-    clearDecorations();
-    try {
-      this.stats.readFromBuffer(this.buffer, this.fileName || "");
-    } catch (e) {
-      let message = (e instanceof Error) ? e.message : e;
-      vscode.window.showErrorMessage(`Failed to parse stats from ${this.fileName}: ${message}`);
-      return;
-    }
-    if (this.fileName) {
-      const lines = this.stats.locationMap.get(this.fileName);
-      if (lines) {
-        setLinesHeat(lines, this.stats);
-      }
-    }
-  }
-
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
     this.writeEmitter.fire(`Starting Profiler in ${this.cwd}.\r\n`);
     let resolvedArgs = resolveArgs(this.command.args);
 
-    // Make a copy of all defined environment variables
     let env: DotenvPopulateInput = {};
     for (let key in process.env) {
       let value = process.env[key];
@@ -79,8 +57,6 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
         env[key] = value;
       }
     }
-
-    // Add any environment variables defined in the envFile, if any given
     if (this.command.envFile) {
       config({ path: this.command.envFile, processEnv: env });
     }
@@ -94,27 +70,51 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
     if (!this.fileName) {
       this.fileName = `${this.command.cmd} ${args}`;
     }
+    const fileName = this.fileName;
+
     if (this.austinProcess) {
       this.austinProcess.on("error", (err) => {
         this.writeEmitter.fire(err.message);
-      });
-      this.austinProcess.stdout!.on("data", (data) => {
-        this.buffer = Buffer.concat([this.buffer, data]);
       });
 
       this.austinProcess.stderr!.on("data", (data) => {
         this.output.append(data.toString());
       });
 
+      clearDecorations();
+      this.stats.begin(fileName);
+      const parser = new StreamingMojoParser(this.stats);
+
+      this.austinProcess.stdout!.on("data", (chunk: Buffer) => {
+        parser.push(chunk);
+      });
+
+      let lastTotal = 0;
+      const refreshInterval = setInterval(() => {
+        if (this.stats.overallTotal > lastTotal) {
+          lastTotal = this.stats.overallTotal;
+          this.stats.refresh();
+        }
+      }, 1000);
+
       this.austinProcess.on("close", (code) => {
+        clearInterval(refreshInterval);
         if (code !== 0) {
           this.writeEmitter.fire(`austin process exited with code ${code}\r\n`);
-          this.result = code;
-          this.closeEmitter.fire(code);
+          this.result = code!;
+          this.closeEmitter.fire(code!);
+          vscode.window.showErrorMessage(`Austin exited with code ${code}. Check the Austin output channel for details.`);
         } else {
           this.writeEmitter.fire("Profiling complete.\r\n");
-          this.closeEmitter.fire(code);
-          this.showStats();
+          this.closeEmitter.fire(0);
+          const label = fileName ? vscode.workspace.asRelativePath(fileName) : "script";
+          vscode.window.showInformationMessage(`Profiling of ${label} done.`);
+          parser.finalize();
+          this.stats.refresh();
+          if (fileName) {
+            const lines = this.stats.locationMap.get(fileName);
+            if (lines) { setLinesHeat(lines, this.stats); }
+          }
         }
       });
     } else {
@@ -126,9 +126,6 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
 
   close(): void {
     // The terminal has been closed. Shutdown the build.
-    if (this.fileWatcher) {
-      this.fileWatcher.dispose();
-    }
     if (this.austinProcess && !this.austinProcess.killed) {
       this.austinProcess.kill();
     }

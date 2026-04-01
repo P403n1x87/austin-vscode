@@ -8,7 +8,6 @@ import { isAbsolute } from 'path';
 import { Readable } from 'stream';
 import { readHead } from './utils/io';
 import { MojoParser } from './utils/mojo';
-import { AustinRuntimeSettings } from './settings';
 
 
 export class AustinSample {
@@ -43,6 +42,9 @@ export class TopStats {
     public module: string | null = null;
     public own: number = 0;
     public total: number = 0;
+    public rawOwn: number = 0;
+    public rawTotal: number = 0;
+    public rawCallerContributions: Map<string, number> = new Map();
     public callees: Map<string, TopStats> = new Map();
     public callers: Map<string, TopStats> = new Map();
     public callerContributions: Map<string, number> = new Map();
@@ -125,14 +127,14 @@ export class AustinStats implements AustinStats {
                 stats.set(key, new TopStats(fo.scope, fo.module));
             }
             let topStats = stats.get(key)!;
-            topStats.total += metric;
+            topStats.rawTotal += metric;
             if (fo.line > 0 && (topStats.minLine === 0 || fo.line < topStats.minLine)) { topStats.minLine = fo.line; }
             if (caller) {
                 const callerKey = caller.key();
                 if (!topStats.callers.has(callerKey)) {
                     topStats.callers.set(callerKey, caller);
                 }
-                topStats.callerContributions.set(callerKey, (topStats.callerContributions.get(callerKey) ?? 0) + metric);
+                topStats.rawCallerContributions.set(callerKey, (topStats.rawCallerContributions.get(callerKey) ?? 0) + metric);
             }
             caller = topStats;
         });
@@ -140,7 +142,7 @@ export class AustinStats implements AustinStats {
         // Set own time to the top of the stack
         fo = frameList[frameList.length - 1];
         let key = `${fo.module}:${fo.scope}`;
-        stats.get(key)!.own += metric;
+        stats.get(key)!.rawOwn += metric;
     }
 
     private updateLineMap(frames: FrameObject[], metric: number) {
@@ -261,27 +263,42 @@ export class AustinStats implements AustinStats {
 
     private updateCallStack(pid: number, tid: string, frameList: FrameObject[], metric: number) {
         const processNode = this.callStack.callees.getDefault(pid.toString(), () => new TopStats(`Process ${pid}`, ""));
-        processNode.total += metric;
+        processNode.rawTotal += metric;
         let current = processNode.callees.getDefault(tid, () => new TopStats(`Thread ${tid}`, ""));
-        current.total += metric;
+        current.rawTotal += metric;
 
         frameList.forEach((fo, idx) => {
             const key = `${fo.module}:${fo.scope}`;
             const callee = current.callees.getDefault(key, () => new TopStats(fo.scope, fo.module));
             if (fo.line > 0 && (callee.minLine === 0 || fo.line < callee.minLine)) { callee.minLine = fo.line; }
-            callee.total += metric;
+            callee.rawTotal += metric;
             if (idx === frameList.length - 1) {
-                callee.own += metric;
+                callee.rawOwn += metric;
             }
             current = callee;
         });
     }
 
-    private normalizeCallStack(node: TopStats): void {
-        node.own /= this.overallTotal;
-        node.total /= this.overallTotal;
+    private normalizeCallStackNode(node: TopStats): void {
+        node.own = node.rawOwn / this.overallTotal;
+        node.total = node.rawTotal / this.overallTotal;
         for (const child of node.callees.values()) {
-            this.normalizeCallStack(child);
+            this.normalizeCallStackNode(child);
+        }
+    }
+
+    private normalizeAll() {
+        if (this.overallTotal === 0) { return; }
+        const total = this.overallTotal;
+        for (const s of this.top.values()) {
+            s.own = s.rawOwn / total;
+            s.total = s.rawTotal / total;
+            for (const [k, v] of s.rawCallerContributions) {
+                s.callerContributions.set(k, v / total);
+            }
+        }
+        for (const child of this.callStack.callees.values()) {
+            this.normalizeCallStackNode(child);
         }
     }
 
@@ -309,22 +326,31 @@ export class AustinStats implements AustinStats {
         this._afterCbs.push(cb);
     }
 
+    public registerOnceAfterCallback(cb: (stats: AustinStats) => void) {
+        const wrapper = (stats: AustinStats) => {
+            cb(stats);
+            this._afterCbs = this._afterCbs.filter(c => c !== wrapper);
+        };
+        this._afterCbs.push(wrapper);
+    }
+
+    public begin(fileName: string) {
+        this.source = fileName;
+        this.clear();
+        this._beforeCbs.forEach(cb => cb());
+    }
+
+    public refresh() {
+        this.normalizeAll();
+        this._afterCbs.forEach(cb => cb(this));
+    }
+
     private finalize() {
-        [...this.top.values()].forEach(v => {
-            v.own /= this.overallTotal;
-            v.total /= this.overallTotal;
-            for (const [k, val] of v.callerContributions) {
-                v.callerContributions.set(k, val / this.overallTotal);
-            }
-        });
-        for (const child of this.callStack.callees.values()) {
-            this.normalizeCallStack(child);
-        }
-        this._afterCbs.forEach((cb) => cb(this));
+        this.refresh();
     }
 
     public readFromBuffer(buffer: Buffer, fileName: string) {
-        if (AustinRuntimeSettings.get().settings.binaryMode) {
+        if (buffer.length >= 3 && buffer.slice(0, 3).toString() === "MOJ") {
             this.readFromMojoStream(buffer.values(), fileName);
         } else {
             let stream = new Readable();
