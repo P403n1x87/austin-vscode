@@ -72,6 +72,7 @@ export interface AustinStats {
 
 export class AustinStats implements AustinStats {
 
+    public paused: boolean = false;
     private _beforeCbs: (() => void)[];
     private _afterCbs: ((stats: AustinStats) => void)[];
 

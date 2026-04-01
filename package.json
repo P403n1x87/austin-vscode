@@ -24,6 +24,7 @@
   "icon": "art/logo.png",
   "activationEvents": [
     "onCommand:austin-vscode.profile",
+    "onCommand:austin-vscode.attach",
     "onCommand:austin-vscode.load",
     "onStartupFinished",
     "onView:austin-vscode.flame-graph",
@@ -120,8 +121,20 @@
         "title": "Profile with Austin"
       },
       {
+        "command": "austin-vscode.attach",
+        "title": "Attach Austin to Process"
+      },
+      {
+        "command": "austin-vscode.detach",
+        "title": "Detach Austin from Process"
+      },
+      {
         "command": "austin-vscode.load",
         "title": "Load Austin Samples ..."
+      },
+      {
+        "command": "austin-vscode.togglePause",
+        "title": "Pause/Resume Austin UI Refreshes"
       }
     ],
     "keybindings": [
@@ -135,6 +148,11 @@
         "key": "shift+f5",
         "mac": "shift+f5",
         "when": "!inDebugMode && editorLangId == python"
+      },
+      {
+        "command": "austin-vscode.attach",
+        "key": "ctrl+shift+f5",
+        "mac": "ctrl+shift+f5"
       }
     ],
     "taskDefinitions": [
@@ -181,6 +199,10 @@
           "envFile": {
             "type": "string",
             "description": "Path to a .env file to load environment variables from"
+          },
+          "pid": {
+            "type": "number",
+            "description": "PID of a running Python process to attach to (mutually exclusive with file)"
           }
         }
       }

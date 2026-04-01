@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { setLinesHeat } from '../view';
 import { AustinStats } from '../model';
 
 
@@ -14,6 +13,8 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     private _stats: AustinStats | null = null;
     private _initialized: boolean = false;
     private _onFrameSelected?: (pathKey: string) => void;
+    private _sessionActive: boolean = false;
+    private _flameHtmlSet: boolean = false;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -26,6 +27,8 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         _token: vscode.CancellationToken,
     ) {
         this._view = webviewView;
+        this._initialized = false;
+        this._flameHtmlSet = false;
 
         webviewView.webview.options = {
             // Allow scripts in the webview
@@ -47,6 +50,11 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
             if (data === "open") {
                 vscode.commands.executeCommand('austin-vscode.load');
+                return;
+            }
+
+            if (data === "detach") {
+                vscode.commands.executeCommand('austin-vscode.detach');
                 return;
             }
 
@@ -107,25 +115,33 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         this._view?.webview.postMessage({ focus: pathKey });
     }
 
+    public showDetachButton() {
+        this._sessionActive = true;
+        if (this._initialized) {
+            this._view?.webview.postMessage('showDetach');
+        }
+    }
+
+    public showOpenButton() {
+        this._sessionActive = false;
+        if (this._initialized) {
+            this._view?.webview.postMessage('showOpen');
+        }
+    }
+
     public refresh(stats: AustinStats) {
         this._stats = stats;
         if (this._view) {
-            this._setFlameGraphHtml();
-            this._view.show?.(true);
+            if (!this._flameHtmlSet) {
+                this._setFlameGraphHtml();
+                this._flameHtmlSet = true;
+            }
 
             if (this._initialized) {
                 this._view.webview.postMessage({
                     "meta": { "mode": stats.metadata.get("mode") },
                     "hierarchy": stats.hierarchy,
                 });
-            }
-            // this._source = austinFile;
-        }
-        const currentUri = vscode.window.activeTextEditor?.document.uri;
-        if (currentUri?.scheme === "file") {
-            const lines = stats.locationMap.get(currentUri.fsPath);
-            if (lines) {
-                setLinesHeat(lines, stats);
             }
         }
     }
@@ -141,18 +157,35 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
         const austinLogoUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin-light.svg'));
 
+        const btnText = this._sessionActive ? 'Detach' : 'Open';
+        const btnOnclick = this._sessionActive ? 'onDetach()' : 'onOpen()';
+
         webview.html = `<!DOCTYPE html>
 			<html lang="en">
             <head>
                 <link rel="stylesheet" type="text/css" href="${austinCssUri}">
             </head>
             <body class="logo">
-                <div id="header"><img src="${austinLogoUri}" /><span class="vc" id="mode"></span><input id="search-box" type="text" placeholder="Search…" /><button id="header-open" onclick="onOpen()">Open</button></div>
+                <div id="header"><img src="${austinLogoUri}" /><span class="vc" id="mode"></span><input id="search-box" type="text" placeholder="Search…" /><button id="header-open" onclick="${btnOnclick}">${btnText}</button></div>
                 <div id="chart"></div>
                 <div id="footer"></div>
 
                 <script type="text/javascript" src="${flameGraphUtilsUri}"></script>
                 <script type="text/javascript" src="${flameGraphScriptUri}"></script>
+                <script>
+                function onOpen() { window.vscode.postMessage("open"); }
+                function onDetach() { window.vscode.postMessage("detach"); }
+                window.addEventListener('message', function(e) {
+                    var btn = document.getElementById('header-open');
+                    if (e.data === 'showDetach') {
+                        btn.textContent = 'Detach';
+                        btn.onclick = onDetach;
+                    } else if (e.data === 'showOpen') {
+                        btn.textContent = 'Open';
+                        btn.onclick = onOpen;
+                    }
+                });
+                </script>
             </body>
 			</html>`;
     }
@@ -214,7 +247,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
                 <script>
                 const vscode = acquireVsCodeApi();
-                
+
                 function onOpen() {
                     vscode.postMessage("open");;
                 }

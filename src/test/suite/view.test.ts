@@ -1,5 +1,8 @@
 import * as assert from 'assert';
-import { computeGutterMetrics, formatInterval, formatMemory, formatTime, modeColors, statColor } from '../../view';
+import { computeGutterMetrics, formatInterval, formatMemory, formatTime, modeColors, setLinesHeat, statColor } from '../../view';
+import { AustinStats, FrameObject } from '../../model';
+import '../../stringExtension';
+import '../../mapExtension';
 
 suite('formatTime', () => {
 
@@ -178,5 +181,106 @@ suite('computeGutterMetrics', () => {
         const m = computeGutterMetrics(5);
         assert.ok(m.labelX1 > m.col1X + m.barTrackW);
         assert.ok(m.labelX2 > m.col2X + m.barTrackW);
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// setLinesHeat — dispose ordering (no-flicker guarantee)
+//
+// Old behaviour: clearDecorations() (dispose all) → create new decorators
+//                Results in a brief flash with no decorations visible.
+//
+// New behaviour: save old decorators → create new → dispose old
+//                New decorations are applied before old ones disappear.
+// ---------------------------------------------------------------------------
+suite('setLinesHeat — dispose ordering', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const vscodeWindow = (require('vscode') as { window: Record<string, unknown> }).window;
+
+    let events: string[] = [];
+    let typeIdCounter = 0;
+    let savedCreateDeco: unknown;
+    let savedEditorDescriptor: PropertyDescriptor | undefined;
+
+    const mockRange = { start: {}, end: {} };
+    const mockEditor = {
+        document: {
+            lineCount: 20,
+            lineAt: (_i: number) => ({ range: mockRange, text: 'pass' }),
+        },
+        setDecorations: (_type: { id: string }, _ranges: unknown[]) => {
+            events.push(`set:${_type.id}`);
+        },
+    };
+
+    setup(() => {
+        events = [];
+        typeIdCounter = 0;
+        savedCreateDeco = vscodeWindow.createTextEditorDecorationType;
+        savedEditorDescriptor = Object.getOwnPropertyDescriptor(vscodeWindow, 'activeTextEditor');
+
+        vscodeWindow.createTextEditorDecorationType = (_opts: unknown) => {
+            const id = String(typeIdCounter++);
+            return { id, dispose: () => events.push(`dispose:${id}`) };
+        };
+        Object.defineProperty(vscodeWindow, 'activeTextEditor', {
+            get: () => mockEditor,
+            configurable: true,
+        });
+    });
+
+    teardown(() => {
+        vscodeWindow.createTextEditorDecorationType = savedCreateDeco;
+        if (savedEditorDescriptor) {
+            Object.defineProperty(vscodeWindow, 'activeTextEditor', savedEditorDescriptor);
+        }
+    });
+
+    function makeStats(): [AustinStats, Map<string, [FrameObject, number, number]>] {
+        const frame: FrameObject = { module: '/tmp/test.py', scope: 'foo', line: 5 };
+        const stats = new AustinStats();
+        stats.begin('/tmp/test.py');
+        stats.update(0, '0', [frame], 1000);
+        stats.refresh();
+        const locations = stats.locationMap.get('/tmp/test.py')!;
+        return [stats, locations];
+    }
+
+    test('first call creates decorators and nothing is disposed', () => {
+        const [stats, locations] = makeStats();
+        setLinesHeat(locations, stats);
+
+        assert.ok(events.some(e => e.startsWith('set:')), 'decorators should be applied');
+        assert.ok(!events.some(e => e.startsWith('dispose:')), 'nothing to dispose on first call');
+    });
+
+    test('second call disposes old decorators after applying new ones', () => {
+        const [stats, locations] = makeStats();
+
+        setLinesHeat(locations, stats);
+        const firstCallTypeCount = typeIdCounter; // types 0 .. firstCallTypeCount-1
+
+        events = []; // reset — we only care about the second call's ordering
+        setLinesHeat(locations, stats);
+
+        const setEvents     = events.filter(e => e.startsWith('set:'));
+        const disposeEvents = events.filter(e => e.startsWith('dispose:'));
+
+        assert.ok(setEvents.length > 0, 'second call should create new decorators');
+        assert.ok(disposeEvents.length > 0, 'second call should dispose first-call decorators');
+
+        // All disposed IDs should belong to the first call
+        for (const ev of disposeEvents) {
+            const id = parseInt(ev.slice('dispose:'.length), 10);
+            assert.ok(id < firstCallTypeCount, `disposed id ${id} should be from first call`);
+        }
+
+        // Every dispose event must come after the last set event in the sequence
+        const lastSetIdx     = events.map((e, i) => e.startsWith('set:')     ? i : -1).reduce((a, b) => Math.max(a, b), -1);
+        const firstDisposeIdx = events.findIndex(e => e.startsWith('dispose:'));
+
+        assert.ok(firstDisposeIdx > lastSetIdx,
+            'all new setDecorations calls must precede disposal of old decorators');
     });
 });

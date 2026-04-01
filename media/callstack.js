@@ -3,6 +3,7 @@
 
     let idCounter = 0;
     let expanded = new Set();
+    let expandedPaths = new Set();
     let treeData = null;
     let sortCol = 'own';
     let sortAsc = false;
@@ -14,6 +15,7 @@
         const msg = event.data;
         if (msg.loading) {
             treeData = null;
+            expandedPaths.clear();
             render();
             loading.classList.add('active');
         } else if (msg.tree !== undefined) {
@@ -49,6 +51,22 @@
         for (const node of sorted(treeData)) {
             appendNode(tbody, node, null, 0);
         }
+
+        restoreExpanded();
+    }
+
+    function restoreExpanded() {
+        if (expandedPaths.size === 0) { return; }
+        document.querySelectorAll('tr[data-expandable][data-path-key]').forEach(tr => {
+            const pk = tr.dataset.pathKey;
+            if (!pk || !expandedPaths.has(pk)) { return; }
+            const rowId = tr.dataset.rowId;
+            document.querySelectorAll(`tr[data-parent-id="${rowId}"]`).forEach(child => {
+                child.style.display = '';
+            });
+            expanded.add(rowId);
+            tr.dataset.open = '1';
+        });
     }
 
     function sorted(nodes) {
@@ -112,7 +130,10 @@
         if (isExpanded) {
             collapseDescendants(rowId);
             expanded.delete(rowId);
-            if (row) { delete row.dataset.open; }
+            if (row) {
+                delete row.dataset.open;
+                if (row.dataset.pathKey) { expandedPaths.delete(row.dataset.pathKey); }
+            }
         } else {
             if (row && row.dataset.childrenPending) {
                 // Children not yet loaded — request from extension
@@ -123,7 +144,10 @@
                 tr.style.display = '';
             });
             expanded.add(rowId);
-            if (row) { row.dataset.open = '1'; }
+            if (row) {
+                row.dataset.open = '1';
+                if (row.dataset.pathKey) { expandedPaths.add(row.dataset.pathKey); }
+            }
         }
     }
 
@@ -136,6 +160,7 @@
                 expanded.delete(childId);
                 delete tr.dataset.open;
             }
+            if (tr.dataset.pathKey) { expandedPaths.delete(tr.dataset.pathKey); }
         });
     }
 
@@ -168,6 +193,7 @@
         });
         expanded.add(parentId);
         parentRow.dataset.open = '1';
+        expandedPaths.add(parentPathKey);
     }
 
     function insertNodeBefore(tbody, refNode, node, parentId, level) {

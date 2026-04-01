@@ -35,14 +35,30 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
     );
   }
 
+  public buildTaskFromPid(pid: number) {
+    return this.buildTask(
+      {
+        pid,
+        type: "austin",
+        command: platform() === "darwin" ? ["sudo"] : undefined,
+        mode: AustinRuntimeSettings.getMode(),
+      },
+      vscode.TaskScope.Workspace,
+    );
+  }
+
   public buildTask(
     definition: AustinProfileTaskDefinition,
     scope: vscode.WorkspaceFolder | vscode.TaskScope,
   ): vscode.Task {
+    const taskName = definition.pid !== undefined
+      ? `attach to PID ${definition.pid}`
+      : definition.file ? `profile ${definition.file}` : "profile";
+
     return new vscode.Task(
       definition,
       scope,
-      definition.file ? `profile ${definition.file}` : "profile", // TODO: add better logging
+      taskName,
       "austin",
       new vscode.CustomExecution(async (): Promise<vscode.Pseudoterminal> => {
         let cwd: string | undefined = undefined;
@@ -78,14 +94,19 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
           definition.interval,
           definition.mode,
           definition.envFile,
+          definition.pid,
         );
+
+        const fileName = definition.pid !== undefined
+          ? `PID ${definition.pid}`
+          : resolvedPath?.fsPath;
 
         return new AustinCommandExecutor(
           command,
           cwd!,
           this.output,
           this.stats,
-          resolvedPath?.fsPath,
+          fileName,
         );
       })
     );
@@ -113,12 +134,12 @@ interface AustinProfileTaskDefinition extends vscode.TaskDefinition {
    */
   args?: string[];
 
-  /** 
+  /**
    * Polling interval
    */
   interval?: number;
 
-  /** 
+  /**
    * Mode, either "Wall time" or "CPU time"
    */
   mode?: AustinMode;
@@ -137,4 +158,9 @@ interface AustinProfileTaskDefinition extends vscode.TaskDefinition {
    * Optional environment file to source before running austin
    */
   envFile?: string;
+
+  /**
+   * PID of a running Python process to attach to
+   */
+  pid?: number;
 }

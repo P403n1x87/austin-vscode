@@ -337,3 +337,48 @@ suite('AustinStats.begin', () => {
         assert.strictEqual(called, 1);
     });
 });
+
+
+// ---------------------------------------------------------------------------
+// AustinStats — paused flag
+// ---------------------------------------------------------------------------
+suite('AustinStats — paused flag', () => {
+
+    test('paused defaults to false', () => {
+        const stats = new AustinStats();
+        assert.strictEqual(stats.paused, false);
+    });
+
+    test('paused can be set to true', () => {
+        const stats = new AustinStats();
+        stats.paused = true;
+        assert.strictEqual(stats.paused, true);
+    });
+
+    test('paused can be toggled back to false', () => {
+        const stats = new AustinStats();
+        stats.paused = true;
+        stats.paused = false;
+        assert.strictEqual(stats.paused, false);
+    });
+
+    test('refresh() still fires after-callbacks regardless of paused (paused is checked by the caller)', () => {
+        // The paused flag is intentionally not checked inside refresh() itself —
+        // the executor's setInterval is responsible for skipping the call.
+        // This test documents that contract.
+        const stats = new AustinStats();
+        let called = 0;
+        stats.registerAfterCallback(() => { called++; });
+        stats.paused = true;
+        stats.update(1, 'T1', [], 100);
+        stats.refresh();
+        assert.strictEqual(called, 1, 'refresh() fires callbacks even when paused');
+    });
+
+    test('begin() does not reset paused', () => {
+        const stats = new AustinStats();
+        stats.paused = true;
+        stats.begin('new.austin');
+        assert.strictEqual(stats.paused, true);
+    });
+});

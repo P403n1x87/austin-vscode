@@ -1,7 +1,7 @@
 // @ts-check
 (function () {
     // @ts-ignore
-    const vscode = acquireVsCodeApi();
+    const vscode = window.vscode = acquireVsCodeApi();
 
     // ── Utilities (loaded from flamegraph-utils.js) ───────────────────────────
     // @ts-ignore
