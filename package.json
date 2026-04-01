@@ -57,11 +57,6 @@
           ],
           "default": "Wall time"
         },
-        "austin.binaryMode": {
-          "description": "Binary mode (MOJO output)",
-          "type": "boolean",
-          "default": false
-        },
         "austin.lineStats": {
           "description": "Line statistics",
           "type": "string",

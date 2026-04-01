@@ -35,9 +35,8 @@ export function getAustinCommand(
 
     _args = _args.concat(["-i", `${_interval}`, `--pipe`]);
 
-    if (_mode === AustinMode.CpuTime) { _args.push("-s"); }
+    if (_mode === AustinMode.CpuTime) { _args.push("-c"); }
     if (_mode === AustinMode.Memory) { _args.push("-m"); }
-    if (settings.binaryMode) { _args.push("-b"); }
     if (austinArgs) { _args = _args.concat(austinArgs); }
     if (pythonFile) {
         _args.push(getConfiguredInterpreter());

@@ -3,6 +3,8 @@ import { clearDecorations, setLinesHeat } from './view';
 import { absolutePath, AustinStats } from './model';
 import { isPythonExtensionAvailable } from './utils/pythonExtension';
 import { AustinProfileTaskProvider } from './providers/task';
+import { AustinRuntimeSettings } from './settings';
+import { AustinVersionError, checkAustinVersion } from './utils/versionCheck';
 
 
 export class AustinController {
@@ -17,6 +19,17 @@ export class AustinController {
         if (!isPythonExtensionAvailable()) {
             throw Error("Python extension not available");
         }
+
+        try {
+            await checkAustinVersion(AustinRuntimeSettings.getPath());
+        } catch (e) {
+            const message = (e instanceof AustinVersionError)
+                ? e.message
+                : `Could not determine Austin version: ${(e instanceof Error) ? e.message : e}`;
+            vscode.window.showErrorMessage(message);
+            return;
+        }
+
         if (currentUri?.scheme === "file") {
             let task = this.provider.buildTaskFromUri(currentUri);
             await vscode.tasks.executeTask(task);

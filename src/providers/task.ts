@@ -4,6 +4,7 @@ import { AustinCommandExecutor } from "./executor";
 import { AustinStats } from "../model";
 import { isPythonExtensionAvailable } from "../utils/pythonExtension";
 import { AustinMode } from "../types";
+import { AustinRuntimeSettings } from "../settings";
 import { isAbsolute } from "path";
 import { platform } from "os";
 
@@ -24,7 +25,12 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
 
   public buildTaskFromUri(path: vscode.Uri) {
     return this.buildTask(
-      { file: path.fsPath, type: "austin", command: platform() === "darwin" ? ["sudo"] : undefined },
+      {
+        file: path.fsPath,
+        type: "austin",
+        command: platform() === "darwin" ? ["sudo"] : undefined,
+        mode: AustinRuntimeSettings.getMode(),
+      },
       vscode.TaskScope.Workspace,
     );
   }

@@ -287,3 +287,212 @@ export class MojoParser {
         }
     }
 }
+
+export class StreamingMojoParser {
+    private pending: Buffer = Buffer.alloc(0);
+    private offset = 0;
+    private version: bigint | null = null;
+
+    private frameRefs = new Map<string, FrameObject>();
+    private stringRefs = new Map<string, string>();
+
+    private currentPid: bigint | null = null;
+    private currentIid: bigint | null = null;
+    private currentTid: string | null = null;
+    private currentStack: FrameObject[] = [];
+    private currentStackKey: string | null = null;
+    private currentTimeMetric: bigint | null = null;
+    private currentMemoryMetric: bigint | null = null;
+    private mode: string | null = null;
+    private previousStacks = new Map<string, FrameObject[]>();
+    private invalidFrame = false;
+
+    constructor(private readonly stats: AustinStats) {}
+
+    private consume(): number {
+        if (this.offset >= this.pending.length) {
+            throw new IteratorDone();
+        }
+        return this.pending[this.offset++];
+    }
+
+    private consumeVarInt(): bigint {
+        let n: bigint = 0n;
+        let s = 6n;
+        let b = BigInt(this.consume());
+        const sign = (b & 0x40n);
+        n |= (b & 0x3Fn);
+        while (b & 0x80n) {
+            b = BigInt(this.consume());
+            n |= ((b & 0x7Fn) << s);
+            s += 7n;
+        }
+        return sign ? -n : n;
+    }
+
+    private consumeString(): string {
+        const bs: number[] = [];
+        while (true) {
+            const b = this.consume();
+            if (b === 0) { break; }
+            bs.push(b);
+        }
+        return String.fromCharCode(...bs);
+    }
+
+    private consumeHeader(): void {
+        if (this.consume() !== ord('M') || this.consume() !== ord('O') || this.consume() !== ord('J')) {
+            throw new Error("Invalid MOJO header");
+        }
+        this.version = this.consumeVarInt();
+    }
+
+    private consumeFrame(): FrameData {
+        const key = this.consumeVarInt();
+        const filenameKey = this.consumeVarInt();
+        const scopeKey = this.consumeVarInt();
+        const line = this.consumeVarInt();
+        let lineEnd = 0n, column = 0n, columnEnd = 0n;
+        if (this.version! >= 2n) {
+            lineEnd = this.consumeVarInt();
+            column = this.consumeVarInt();
+            columnEnd = this.consumeVarInt();
+        }
+        const filename = this.stringRefs.get(`${this.currentPid}:${filenameKey}`);
+        const scope = (scopeKey === 1n) ? "<unknown>" : this.stringRefs.get(`${this.currentPid}:${scopeKey}`);
+        if (filename === undefined || scope === undefined) {
+            throw new Error("Invalid string references in frame event");
+        }
+        return {
+            key,
+            frame: {
+                module: filename,
+                scope,
+                line: Number(line),
+                lineEnd: Number(lineEnd),
+                column: Number(column),
+                columnEnd: Number(columnEnd),
+            }
+        };
+    }
+
+    private processOneEvent(): void {
+        switch (this.consume()) {
+            case MOJO_EVENT.metadata: {
+                const k = this.consumeString();
+                const v = this.consumeString();
+                this.stats.setMetadata(k, v);
+                if (k === "mode") { this.mode = v; }
+                break;
+            }
+            case MOJO_EVENT.stack: {
+                if (this.currentPid !== null) {
+                    this.stats.update(
+                        Number(this.currentPid),
+                        `${this.currentIid}:${this.currentTid}`,
+                        this.currentStack,
+                        Number(this.mode === "memory" ? this.currentMemoryMetric! : this.currentTimeMetric!),
+                    );
+                    this.previousStacks.set(this.currentStackKey!, this.currentStack);
+                }
+                this.currentPid = this.consumeVarInt();
+                this.currentIid = this.version! >= 3n ? this.consumeVarInt() : 0n;
+                this.currentTid = this.consumeString();
+                this.currentStackKey = `${this.currentPid}:${this.currentIid}:${this.currentTid}`;
+                this.currentStack = [];
+                this.currentTimeMetric = null;
+                this.currentMemoryMetric = null;
+                this.invalidFrame = false;
+                break;
+            }
+            case MOJO_EVENT.frame: {
+                if (this.currentPid === null) { throw new Error("Frame before stack"); }
+                const fd = this.consumeFrame();
+                this.frameRefs.set(`${this.currentPid}:${fd.key}`, fd.frame);
+                break;
+            }
+            case MOJO_EVENT.invalidFrame: {
+                if (this.previousStacks.has(this.currentStackKey!)) {
+                    this.currentStack = this.previousStacks.get(this.currentStackKey!)!;
+                    this.invalidFrame = true;
+                } else {
+                    this.currentStack.push(specialFrame("INVALID"));
+                }
+                break;
+            }
+            case MOJO_EVENT.frameReference: {
+                const key = `${this.currentPid}:${this.consumeVarInt()}`;
+                if (!this.invalidFrame) {
+                    this.currentStack.push(this.frameRefs.get(key)!);
+                }
+                break;
+            }
+            case MOJO_EVENT.kernelFrame: {
+                const kf = { module: "kernel", scope: this.consumeString(), line: 0 };
+                if (!this.invalidFrame) { this.currentStack.push(kf); }
+                break;
+            }
+            case MOJO_EVENT.gc:
+                this.currentStack.push(specialFrame("GC"));
+                break;
+            case MOJO_EVENT.idle:
+                break;
+            case MOJO_EVENT.time:
+                this.currentTimeMetric = this.consumeVarInt();
+                break;
+            case MOJO_EVENT.memory:
+                this.currentMemoryMetric = this.consumeVarInt();
+                break;
+            case MOJO_EVENT.string: {
+                const k = this.consumeVarInt();
+                const v = this.consumeString();
+                this.stringRefs.set(`${this.currentPid}:${k}`, v);
+                break;
+            }
+            default:
+                throw new Error("Unknown MOJO event");
+        }
+    }
+
+    push(chunk: Buffer): void {
+        this.pending = Buffer.concat([this.pending.slice(this.offset), chunk]);
+        this.offset = 0;
+
+        if (this.version === null) {
+            const checkpoint = this.offset;
+            try {
+                this.consumeHeader();
+            } catch (e) {
+                if (e instanceof IteratorDone) {
+                    this.offset = checkpoint;
+                    return;
+                }
+                throw e;
+            }
+        }
+
+        while (true) {
+            const checkpoint = this.offset;
+            try {
+                this.processOneEvent();
+            } catch (e) {
+                if (e instanceof IteratorDone) {
+                    this.offset = checkpoint;
+                    break;
+                }
+                throw e;
+            }
+        }
+    }
+
+    finalize(): void {
+        if (this.currentPid !== null) {
+            this.stats.update(
+                Number(this.currentPid),
+                `${this.currentIid}:${this.currentTid}`,
+                this.currentStack,
+                Number(this.mode === "memory" ? this.currentMemoryMetric! : this.currentTimeMetric!),
+            );
+        }
+    }
+}
