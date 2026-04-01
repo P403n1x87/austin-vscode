@@ -58,6 +58,11 @@
           ],
           "default": "Wall time"
         },
+        "austin.children": {
+          "description": "Profile child processes as well (-C)",
+          "type": "boolean",
+          "default": false
+        },
         "austin.lineStats": {
           "description": "Line statistics",
           "type": "string",
@@ -135,6 +140,10 @@
       {
         "command": "austin-vscode.togglePause",
         "title": "Pause/Resume Austin UI Refreshes"
+      },
+      {
+        "command": "austin-vscode.toggleChildren",
+        "title": "Toggle Austin Children Profiling"
       }
     ],
     "keybindings": [

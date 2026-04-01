@@ -10,6 +10,7 @@
 
     const syncToggle = document.getElementById('sync-toggle');
     const loading = document.getElementById('loading');
+    const liveDot = document.getElementById('live-dot');
 
     window.addEventListener('message', event => {
         const msg = event.data;
@@ -26,6 +27,8 @@
             insertLazyChildren(msg.childrenFor, msg.children);
         } else if (msg.focus) {
             if (syncToggle.checked) { focusPath(msg.focus.pathKey); }
+        } else if (msg.live !== undefined) {
+            liveDot.classList.toggle('active', !!msg.live);
         }
     });
 

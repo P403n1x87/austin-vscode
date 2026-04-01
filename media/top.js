@@ -13,6 +13,8 @@
     const filterInput = document.getElementById('filter-input');
     const filterClear = document.getElementById('filter-clear');
 
+    const liveDot = document.getElementById('live-dot');
+
     window.addEventListener('message', event => {
         const message = event.data;
         if (message.loading) {
@@ -29,6 +31,8 @@
             render();
         } else if (message.callersFor !== undefined) {
             insertLazyCallers(message.callersFor, message.callers);
+        } else if (message.live !== undefined) {
+            liveDot.classList.toggle('active', !!message.live);
         }
     });
 

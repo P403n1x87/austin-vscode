@@ -97,6 +97,14 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         this._view?.webview.postMessage({ loading: true });
     }
 
+    public showLive() {
+        this._view?.webview.postMessage({ live: true });
+    }
+
+    public hideLive() {
+        this._view?.webview.postMessage({ live: false });
+    }
+
     public focusPath(pathKey: string) {
         this._view?.webview.postMessage({ focus: { pathKey } });
     }
@@ -173,6 +181,20 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
             opacity: 0.7;
         }
         .toolbar-btn:hover { opacity: 1; background: var(--vscode-list-hoverBackground); }
+        #live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #e74c3c;
+            flex-shrink: 0;
+            display: none;
+            margin-left: 2px;
+        }
+        #live-dot.active { display: block; animation: live-pulse 1.4s ease-in-out infinite; }
+        @keyframes live-pulse {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.3; }
+        }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -291,6 +313,7 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
                 <path d="M5.5 5L8 7.5L10.5 5M5.5 11L8 8.5L10.5 11" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
         </button>
+        <span id="live-dot" title="Live session active"></span>
     </div>
     <div id="empty" class="empty">No profiling data loaded.</div>
     <table id="table" style="display:none">

@@ -40,7 +40,8 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
     private cwd: string,
     private output: vscode.OutputChannel,
     private stats: AustinStats,
-    private fileName: string | undefined
+    private fileName: string | undefined,
+    private isAttach: boolean = false,
   ) { }
 
   private writeEmitter = new vscode.EventEmitter<string>();
@@ -92,8 +93,11 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
       });
 
       let lastTotal = 0;
+      let firstTick = true;
       const refreshInterval = setInterval(() => {
-        if (!this.stats.paused && this.stats.overallTotal > lastTotal) {
+        const hasNewData = this.stats.overallTotal > lastTotal;
+        if (!this.stats.paused && (firstTick || hasNewData)) {
+          firstTick = false;
           lastTotal = this.stats.overallTotal;
           this.stats.refresh();
         }
@@ -103,11 +107,16 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
         this._processExited = true;
         clearInterval(refreshInterval);
         if (this._killed) {
-          // Intentional detach: we sent a kill signal before the process exited
-          this.writeEmitter.fire("Austin detached.\r\n");
+          // Intentional stop: we sent a kill signal before the process exited
           this.closeEmitter.fire(0);
           const label = fileName ?? "process";
-          vscode.window.showInformationMessage(`Austin detached from ${label}.`);
+          if (this.isAttach) {
+            this.writeEmitter.fire("Austin detached.\r\n");
+            vscode.window.showInformationMessage(`Austin detached from ${label}.`);
+          } else {
+            this.writeEmitter.fire("Austin terminated.\r\n");
+            vscode.window.showInformationMessage(`Austin terminated ${label}.`);
+          }
           parser.finalize();
           this.stats.refresh();
         } else if (code !== 0) {
@@ -115,6 +124,8 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
           this.result = code!;
           this.closeEmitter.fire(code!);
           vscode.window.showErrorMessage(`Austin exited with code ${code}. Check the Austin output channel for details.`);
+          parser.finalize();
+          this.stats.refresh();
         } else {
           this.writeEmitter.fire("Profiling complete.\r\n");
           this.closeEmitter.fire(0);

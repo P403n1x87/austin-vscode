@@ -38,6 +38,7 @@ export function getAustinCommand(
 
     if (_mode === AustinMode.CpuTime) { _args.push("-c"); }
     if (_mode === AustinMode.Memory) { _args.push("-m"); }
+    if (settings.children) { _args.push("-C"); }
     if (austinArgs) { _args = _args.concat(austinArgs); }
     if (pid !== undefined) {
         _args.push("-p", `${pid}`);

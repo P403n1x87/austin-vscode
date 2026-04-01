@@ -96,11 +96,10 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	// ---- Detach status bar item (shown while a profiling session is active) ----
+	// ---- Stop/detach status bar item (shown while a profiling session is active) ----
 	const detachStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 200);
 	detachStatusBarItem.command = "austin-vscode.detach";
-	detachStatusBarItem.text = "$(debug-disconnect) Detach Austin";
-	detachStatusBarItem.tooltip = "Stop Austin and detach from the process";
+	detachStatusBarItem.tooltip = "Stop Austin";
 	detachStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
 
 	context.subscriptions.push(
@@ -132,9 +131,15 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.tasks.onDidStartTask((e) => {
 			if (e.execution.task.definition.type === "austin") {
+				const isAttach = e.execution.task.definition.pid !== undefined;
+				detachStatusBarItem.text = isAttach
+					? "$(debug-disconnect) Detach Austin"
+					: "$(debug-stop) Terminate Austin";
 				detachStatusBarItem.show();
 				pauseStatusBarItem.show();
-				flameGraphViewProvider.showDetachButton();
+				flameGraphViewProvider.showDetachButton(isAttach);
+				topProvider.showLive();
+				callStackProvider.showLive();
 			}
 		})
 	);
@@ -149,6 +154,8 @@ export function activate(context: vscode.ExtensionContext) {
 				pauseStatusBarItem.text = "$(debug-pause) Pause";
 				pauseStatusBarItem.tooltip = "Pause UI refreshes (data collection continues)";
 				flameGraphViewProvider.showOpenButton();
+				topProvider.hideLive();
+				callStackProvider.hideLive();
 			}
 		})
 	);
@@ -179,6 +186,30 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+
+	// ---- Children toggle ----
+	const childrenStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+	childrenStatusBarItem.command = "austin-vscode.toggleChildren";
+	childrenStatusBarItem.tooltip = "Toggle profiling of child processes (-C)";
+
+	let childrenEnabled = AustinRuntimeSettings.getChildren();
+
+	function updateChildrenStatusBar() {
+		childrenStatusBarItem.text = childrenEnabled
+			? "$(type-hierarchy-sub) Children: ON"
+			: "$(type-hierarchy-sub) Children: OFF";
+	}
+	updateChildrenStatusBar();
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("austin-vscode.toggleChildren", () => {
+			childrenEnabled = !childrenEnabled;
+			AustinRuntimeSettings.setChildren(childrenEnabled);
+			updateChildrenStatusBar();
+		})
+	);
+
+	childrenStatusBarItem.show();
 
 	// ---- Mode selector ----
 	const austinModeStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
