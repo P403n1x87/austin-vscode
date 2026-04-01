@@ -13,6 +13,8 @@
     window.addEventListener('message', event => {
         const msg = event.data;
         if (msg.loading) {
+            treeData = null;
+            render();
             loading.classList.add('active');
         } else if (msg.tree !== undefined) {
             loading.classList.remove('active');
@@ -74,11 +76,11 @@
         const mod = node.module ? basename(node.module) : '';
 
         tr.innerHTML =
-            `<td><div class="scope-cell" style="padding-left:${indent}px">` +
+            `<td style="padding-left:${indent + 4}px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">` +
                 `<span class="chevron">&#9654;</span>` +
                 `<span class="scope-name" title="${esc(node.scope)}">${esc(node.scope)}</span>` +
                 (mod ? `<span class="scope-module" title="${esc(node.module)}">${esc(mod)}</span>` : '') +
-            `</div></td>` +
+            `</td>` +
             statCell(node.own, ownText) +
             statCell(node.total, totalText);
 
@@ -187,11 +189,11 @@
         const mod = node.module ? basename(node.module) : '';
 
         tr.innerHTML =
-            `<td><div class="scope-cell" style="padding-left:${indent}px">` +
+            `<td style="padding-left:${indent + 4}px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">` +
                 `<span class="chevron">&#9654;</span>` +
                 `<span class="scope-name" title="${esc(node.scope)}">${esc(node.scope)}</span>` +
                 (mod ? `<span class="scope-module" title="${esc(node.module)}">${esc(mod)}</span>` : '') +
-            `</div></td>` +
+            `</td>` +
             statCell(node.own, ownText) +
             statCell(node.total, totalText);
 
