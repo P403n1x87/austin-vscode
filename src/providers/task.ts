@@ -107,6 +107,7 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
           this.output,
           this.stats,
           fileName,
+          definition.pid !== undefined,
         );
       })
     );

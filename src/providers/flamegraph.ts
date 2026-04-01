@@ -14,6 +14,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     private _initialized: boolean = false;
     private _onFrameSelected?: (pathKey: string) => void;
     private _sessionActive: boolean = false;
+    private _isAttach: boolean = false;
     private _flameHtmlSet: boolean = false;
 
     constructor(
@@ -44,6 +45,12 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 this._initialized = true;
                 if (this._stats) {
                     this.refresh(this._stats);
+                }
+                // Sync live/button state in case it changed while the webview was (re)loading
+                if (this._sessionActive) {
+                    this._view?.webview.postMessage(this._isAttach ? 'showDetach' : 'showTerminate');
+                } else {
+                    this._view?.webview.postMessage('showOpen');
                 }
                 return;
             }
@@ -115,10 +122,11 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         this._view?.webview.postMessage({ focus: pathKey });
     }
 
-    public showDetachButton() {
+    public showDetachButton(isAttach: boolean = true) {
         this._sessionActive = true;
+        this._isAttach = isAttach;
         if (this._initialized) {
-            this._view?.webview.postMessage('showDetach');
+            this._view?.webview.postMessage(isAttach ? 'showDetach' : 'showTerminate');
         }
     }
 
@@ -157,8 +165,9 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
         const austinLogoUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin-light.svg'));
 
-        const btnText = this._sessionActive ? 'Detach' : 'Open';
+        const btnText = this._sessionActive ? (this._isAttach ? 'Detach' : 'Terminate') : 'Open';
         const btnOnclick = this._sessionActive ? 'onDetach()' : 'onOpen()';
+        const liveClass = this._sessionActive ? ' live' : '';
 
         webview.html = `<!DOCTYPE html>
 			<html lang="en">
@@ -166,7 +175,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 <link rel="stylesheet" type="text/css" href="${austinCssUri}">
             </head>
             <body class="logo">
-                <div id="header"><img src="${austinLogoUri}" /><span class="vc" id="mode"></span><input id="search-box" type="text" placeholder="Search…" /><button id="header-open" onclick="${btnOnclick}">${btnText}</button></div>
+                <div id="header"><img id="austin-logo" class="${liveClass}" src="${austinLogoUri}" /><span class="vc" id="mode"></span><input id="search-box" type="text" placeholder="Search…" /><button id="header-open" onclick="${btnOnclick}">${btnText}</button></div>
                 <div id="chart"></div>
                 <div id="footer"></div>
 
@@ -177,12 +186,19 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 function onDetach() { window.vscode.postMessage("detach"); }
                 window.addEventListener('message', function(e) {
                     var btn = document.getElementById('header-open');
+                    var logo = document.getElementById('austin-logo');
                     if (e.data === 'showDetach') {
                         btn.textContent = 'Detach';
                         btn.onclick = onDetach;
+                        logo.classList.add('live');
+                    } else if (e.data === 'showTerminate') {
+                        btn.textContent = 'Terminate';
+                        btn.onclick = onDetach;
+                        logo.classList.add('live');
                     } else if (e.data === 'showOpen') {
                         btn.textContent = 'Open';
                         btn.onclick = onOpen;
+                        logo.classList.remove('live');
                     }
                 });
                 </script>
@@ -194,6 +210,8 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         if (this._view === undefined || this._view.webview === undefined) {
             return;
         }
+        this._initialized = false;
+        this._flameHtmlSet = false;
         const webview = this._view.webview;
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
 

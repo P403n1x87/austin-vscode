@@ -20,5 +20,6 @@ export class AustinSettings {
     path: string = "austin";
     mode: AustinMode = AustinMode.CpuTime;
     interval: number = 100;
-lineStats: AustinLineStats = AustinLineStats.PERCENT;
+    lineStats: AustinLineStats = AustinLineStats.PERCENT;
+    children: boolean = false;
 }

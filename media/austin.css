@@ -98,6 +98,15 @@ button {
     background: rgba(255, 255, 255, 0.1) !important;
 }
 
+@keyframes austin-live-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.35; }
+}
+
+#austin-logo.live {
+    animation: austin-live-pulse 1.8s ease-in-out infinite;
+}
+
 #chart {
     padding-top: 32px;
     padding-bottom: 36px;

@@ -312,10 +312,16 @@
         if (hierarchy.children) {
             for (const child of hierarchy.children) { addPathKeys(child, ''); }
         }
+        // Preserve zoom and search across live updates by re-finding the node
+        const prevZoomKey = zoomNode && zoomNode.data ? zoomNode.data.pathKey : null;
         rootNode = hierarchy;
-        zoomNode = null;
         hoveredFrame = null;
-        searchTerm = '';
+        if (prevZoomKey) {
+            zoomNode = findByPathKey(rootNode, prevZoomKey) || null;
+        } else {
+            zoomNode = null;
+            searchTerm = '';
+        }
         rebuildAndRender(false);
     }
 

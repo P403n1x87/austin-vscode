@@ -20,12 +20,14 @@ export class AustinRuntimeSettings {
         const austinInterval: number = AustinRuntimeSettings.config.get<number>("interval", DEFAULT_INTERVAL);
         const austinMode: AustinMode = AustinRuntimeSettings.config.get("mode", DEFAULT_MODE);
         const austinLineStats: AustinLineStats = AustinRuntimeSettings.config.get("lineStats", DEFAULT_LINE_STATS);
+        const austinChildren: boolean = AustinRuntimeSettings.config.get("children", false);
 
         this.settings = {
             path: austinPath,
             mode: austinMode,
             interval: austinInterval,
-            lineStats: austinLineStats
+            lineStats: austinLineStats,
+            children: austinChildren,
         };
     }
 
@@ -65,5 +67,13 @@ export class AustinRuntimeSettings {
 
     public static setLineStats(newLineStats: AustinLineStats) {
         AustinRuntimeSettings.config.update("lineStats", newLineStats, vscode.ConfigurationTarget.Global);
+    }
+
+    public static getChildren(): boolean {
+        return AustinRuntimeSettings.get().settings.children;
+    }
+
+    public static setChildren(children: boolean) {
+        AustinRuntimeSettings.config.update("children", children, vscode.ConfigurationTarget.Global);
     }
 }
