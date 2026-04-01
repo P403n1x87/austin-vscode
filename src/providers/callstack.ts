@@ -214,33 +214,25 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         }
         tr[data-open]:hover > td { background: var(--vscode-list-hoverBackground); }
         /* scope cell */
-        .scope-cell { display: flex; align-items: baseline; gap: 0; min-width: 0; }
         .chevron {
-            flex-shrink: 0;
             display: inline-block;
             width: 14px;
             font-size: 8px;
             color: var(--vscode-descriptionForeground);
             transition: transform 0.12s ease;
             user-select: none;
+            vertical-align: middle;
         }
         tr[data-open] .chevron { transform: rotate(90deg); }
         tr:not([data-expandable]) .chevron { visibility: hidden; }
         .scope-name {
             font-family: var(--vscode-editor-font-family, monospace);
             font-size: var(--vscode-editor-font-size, 1em);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            flex-shrink: 1;
-            min-width: 0;
         }
         .scope-module {
-            flex-shrink: 0;
             margin-left: 6px;
             font-size: 0.85em;
             color: var(--vscode-descriptionForeground);
-            white-space: nowrap;
         }
         /* stat cells */
         td.stat {

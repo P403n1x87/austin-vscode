@@ -8,11 +8,18 @@
     let expanded = new Set();
     let idCounter = 0;
 
-    const loading = document.getElementById('loading');
+    const loading     = document.getElementById('loading');
+    const filterInput = document.getElementById('filter-input');
+    const filterClear = document.getElementById('filter-clear');
 
     window.addEventListener('message', event => {
         const message = event.data;
         if (message.loading) {
+            data = [];
+            filterTerm = '';
+            filterInput.value = '';
+            filterClear.classList.remove('visible');
+            render();
             loading.classList.add('active');
         } else if (message.top !== undefined) {
             loading.classList.remove('active');
@@ -286,9 +293,6 @@
     document.getElementById('collapse-all').addEventListener('click', () => {
         if (data.length > 0) { render(); }
     });
-
-    const filterInput = document.getElementById('filter-input');
-    const filterClear = document.getElementById('filter-clear');
 
     filterInput.addEventListener('input', e => {
         filterTerm = e.target.value.trim();
