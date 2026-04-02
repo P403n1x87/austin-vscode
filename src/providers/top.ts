@@ -56,6 +56,10 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
                 }
                 return;
             }
+            if (data === 'open') {
+                vscode.commands.executeCommand('austin-vscode.load');
+                return;
+            }
             if (data.module !== undefined) {
                 vscode.commands.executeCommand('austin-vscode.openSourceAtLine', data.module, data.line || 0);
             }
@@ -212,10 +216,10 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
         .caller-row:hover > td { background: var(--vscode-list-hoverBackground); }
         .top-row[data-expandable]:hover > td,
         .caller-row[data-expandable]:hover > td { background: var(--vscode-list-hoverBackground); }
-        .top-row[data-open] > td,
-        .caller-row[data-open] > td {
+        .top-row[data-open] > td {
             background: var(--vscode-list-inactiveSelectionBackground, rgba(128,128,128,0.08));
             border-bottom-color: transparent;
+            padding-bottom: 7px;
         }
         col.func  { width: 100%; }
         .bar-row { display: flex; align-items: center; gap: 4px; }
@@ -253,7 +257,21 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
         .caller-row > td {
             font-size: 0.9em;
             border-bottom-color: transparent;
+            background: rgba(128,128,128,0.14);
         }
+        .caller-row:not([style*="none"]) + .top-row > td {
+            border-top: 2px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+        }
+        @keyframes callerExpandIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes callerCollapseOut {
+            from { opacity: 1; transform: translateY(0); }
+            to   { opacity: 0; transform: translateY(-4px); }
+        }
+        .caller-row.expanding  { animation: callerExpandIn   0.14s ease; }
+        .caller-row.collapsing { animation: callerCollapseOut 0.11s ease forwards; }
         /* depth guide lines: left border on the func cell steps in per level */
         .caller-row .func {
             border-left: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
@@ -345,6 +363,20 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
             text-align: center;
             font-style: italic;
         }
+        .open-btn {
+            display: block;
+            margin: 10px auto 0;
+            padding: 4px 14px;
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+        }
+        .open-btn:hover { background: var(--vscode-button-hoverBackground); }
         #loading {
             display: none;
             position: fixed;
@@ -387,7 +419,10 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
         </button>
         <span id="live-dot" title="Live session active"></span>
     </div>
-    <div id="empty" class="empty">No profiling data loaded.</div>
+    <div id="empty" class="empty">
+        <div>No profiling data loaded.</div>
+        <button class="open-btn" id="open-btn">OPEN</button>
+    </div>
     <table id="table" style="display:none">
         <colgroup>
             <col class="own">

@@ -321,6 +321,10 @@
         if (treeData) { render(); }
     });
 
+    document.getElementById('open-btn').addEventListener('click', () => {
+        vscode.postMessage('open');
+    });
+
     document.querySelectorAll('th[data-col]').forEach(th => {
         th.addEventListener('click', () => {
             const col = th.dataset.col;

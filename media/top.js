@@ -8,6 +8,8 @@
     let expanded = new Set();
     let expandedKeys = new Set();
     let idCounter = 0;
+    const COLLAPSE_MS = 110;
+    const collapseTimers = new WeakMap();
 
     const loading     = document.getElementById('loading');
     const filterInput = document.getElementById('filter-input');
@@ -114,7 +116,13 @@
         tr.dataset.rowId = rowId;
         tr.dataset.level = '0';
         tr.dataset.callerKey = item.key;
-        if (hasCallers) { tr.dataset.expandable = '1'; }
+        if (hasCallers) {
+            tr.dataset.expandable = '1';
+            const n = item.callers.length;
+            tr.title = `${n} caller${n === 1 ? '' : 's'}` + (item.module ? ` · ${item.module}` : '');
+        } else {
+            tr.title = 'no callers detected' + (item.module ? ` · ${item.module}` : '');
+        }
         tr.innerHTML =
             numCell(item.own, 'own', fmt(item.own)) +
             numCell(item.total, 'total', fmt(item.total)) +
@@ -143,6 +151,7 @@
             tr.dataset.callerKey = caller.key;
             if (hasCallers) { tr.dataset.expandable = '1'; }
             if (caller.callersPending) { tr.dataset.callersPending = '1'; }
+            if (caller.module) { tr.title = caller.module; }
             tr.style.display = 'none';
             tr.innerHTML =
                 contribCell(caller.contribution, fmt(caller.contribution)) +
@@ -180,7 +189,12 @@
                 return;
             }
             document.querySelectorAll(`tr[data-parent-id="${rowId}"]`).forEach(tr => {
+                const timer = collapseTimers.get(tr);
+                if (timer !== undefined) { clearTimeout(timer); collapseTimers.delete(tr); }
+                tr.classList.remove('collapsing');
                 tr.style.display = '';
+                tr.classList.add('expanding');
+                tr.addEventListener('animationend', () => tr.classList.remove('expanding'), { once: true });
             });
             expanded.add(rowId);
             if (row) {
@@ -241,6 +255,7 @@
         tr.dataset.callerKey = caller.key;
         if (hasCallers) { tr.dataset.expandable = '1'; }
         if (caller.callersPending) { tr.dataset.callersPending = '1'; }
+        if (caller.module) { tr.title = caller.module; }
         tr.style.display = 'none';
         tr.innerHTML =
             contribCell(caller.contribution, fmt(caller.contribution)) +
@@ -263,7 +278,6 @@
 
     function collapseDescendants(rowId) {
         document.querySelectorAll(`tr[data-parent-id="${rowId}"]`).forEach(tr => {
-            tr.style.display = 'none';
             const childId = tr.dataset.rowId;
             if (expanded.has(childId)) {
                 collapseDescendants(childId);
@@ -271,6 +285,15 @@
                 delete tr.dataset.open;
             }
             if (tr.dataset.callerKey) { expandedKeys.delete(tr.dataset.callerKey); }
+            if (tr.style.display === 'none') { return; }
+            tr.classList.remove('expanding');
+            tr.classList.add('collapsing');
+            const timer = setTimeout(() => {
+                tr.style.display = 'none';
+                tr.classList.remove('collapsing');
+                collapseTimers.delete(tr);
+            }, COLLAPSE_MS);
+            collapseTimers.set(tr, timer);
         });
     }
 
@@ -301,8 +324,8 @@
         const indent = level * 10;
         const mod = module ? basename(module) : '';
         return `<td class="func" style="padding-left:${indent + 6}px">` +
-            `<span class="scope-name" title="${esc(scope)}">${esc(scope || '')}</span>` +
-            (mod ? `<span class="scope-module" title="${esc(module)}">${esc(mod)}</span>` : '') +
+            `<span class="scope-name">${esc(scope || '')}</span>` +
+            (mod ? `<span class="scope-module">${esc(mod)}</span>` : '') +
             `</td>`;
     }
 
@@ -335,6 +358,10 @@
 
     document.getElementById('collapse-all').addEventListener('click', () => {
         if (data.length > 0) { render(); }
+    });
+
+    document.getElementById('open-btn').addEventListener('click', () => {
+        vscode.postMessage('open');
     });
 
     filterInput.addEventListener('input', e => {
