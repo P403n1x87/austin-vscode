@@ -75,6 +75,7 @@ export class AustinStats implements AustinStats {
     public paused: boolean = false;
     private _beforeCbs: (() => void)[];
     private _afterCbs: ((stats: AustinStats) => void)[];
+    private _errorCbs: (() => void)[];
 
     public constructor() {
         this.locationMap = new Map();
@@ -90,6 +91,7 @@ export class AustinStats implements AustinStats {
         this.callStack = new TopStats();
         this._beforeCbs = [];
         this._afterCbs = [];
+        this._errorCbs = [];
         this.source = null;
         this.metadata = new Map();
     }
@@ -333,6 +335,14 @@ export class AustinStats implements AustinStats {
             this._afterCbs = this._afterCbs.filter(c => c !== wrapper);
         };
         this._afterCbs.push(wrapper);
+    }
+
+    public registerErrorCallback(cb: () => void) {
+        this._errorCbs.push(cb);
+    }
+
+    public notifyError() {
+        this._errorCbs.forEach(cb => cb());
     }
 
     public begin(fileName: string) {

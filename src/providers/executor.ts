@@ -125,7 +125,7 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
           this.closeEmitter.fire(code!);
           vscode.window.showErrorMessage(`Austin exited with code ${code}. Check the Austin output channel for details.`);
           parser.finalize();
-          this.stats.refresh();
+          this.stats.notifyError();
         } else {
           this.writeEmitter.fire("Profiling complete.\r\n");
           this.closeEmitter.fire(0);

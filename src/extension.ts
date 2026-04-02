@@ -8,6 +8,7 @@ import { CallStackViewProvider } from './providers/callstack';
 import { AustinProfileTaskProvider } from './providers/task';
 import { AustinRuntimeSettings } from './settings';
 import { AustinMode } from './types';
+import { AUSTIN_MIN_MAJOR, AustinVersionError, checkAustinVersion } from './utils/versionCheck';
 
 
 export function activate(context: vscode.ExtensionContext) {
@@ -42,6 +43,9 @@ export function activate(context: vscode.ExtensionContext) {
 	stats.registerAfterCallback((stats) => flameGraphViewProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => topProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => callStackProvider.refresh(stats));
+	stats.registerErrorCallback(() => flameGraphViewProvider.showError());
+	stats.registerErrorCallback(() => topProvider.showError());
+	stats.registerErrorCallback(() => callStackProvider.showError());
 	stats.registerAfterCallback((stats) => {
 		const editor = vscode.window.activeTextEditor;
 		if (editor?.document.uri.scheme === "file") {
@@ -238,6 +242,47 @@ export function activate(context: vscode.ExtensionContext) {
 
 	austinModeStatusBarItem.show();
 	austinIntervalStatusBarItem.show();
+
+	// Detect austin on activation
+	(async () => {
+		try {
+			await checkAustinVersion(AustinRuntimeSettings.getPath());
+		} catch (e) {
+			if (e instanceof AustinVersionError) {
+				const selection = await vscode.window.showWarningMessage(
+					`${e.message} Upgrade it via pip or point the extension to a newer binary via the austin.path setting.`,
+					'Upgrade via pip',
+					'Set Austin path',
+					'Installation guide'
+				);
+				if (selection === 'Upgrade via pip') {
+					const terminal = vscode.window.createTerminal({ name: 'Upgrade Austin' });
+					terminal.sendText('pip install --upgrade austin-dist');
+					terminal.show();
+				} else if (selection === 'Set Austin path') {
+					vscode.commands.executeCommand('workbench.action.openSettings', 'austin.path');
+				} else if (selection === 'Installation guide') {
+					vscode.env.openExternal(vscode.Uri.parse('https://github.com/P403n1x87/austin?tab=readme-ov-file#installation'));
+				}
+			} else {
+				const selection = await vscode.window.showInformationMessage(
+					`Austin profiler was not detected. Install it via pip (requires Austin >= ${AUSTIN_MIN_MAJOR}.0.0). For custom installations, set the path to the binary via the austin.path extension setting.`,
+					'Install via pip',
+					'Set Austin path',
+					'Installation guide'
+				);
+				if (selection === 'Install via pip') {
+					const terminal = vscode.window.createTerminal({ name: 'Install Austin' });
+					terminal.sendText('pip install austin-dist');
+					terminal.show();
+				} else if (selection === 'Set Austin path') {
+					vscode.commands.executeCommand('workbench.action.openSettings', 'austin.path');
+				} else if (selection === 'Installation guide') {
+					vscode.env.openExternal(vscode.Uri.parse('https://github.com/P403n1x87/austin?tab=readme-ov-file#installation'));
+				}
+			}
+		}
+	})();
 }
 
 

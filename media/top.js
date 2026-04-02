@@ -23,16 +23,29 @@
             filterInput.value = '';
             filterClear.classList.remove('visible');
             expandedKeys.clear();
+            const emptyEl = document.getElementById('empty');
+            emptyEl.textContent = 'No profiling data loaded.';
+            emptyEl.style.color = '';
             render();
             loading.classList.add('active');
         } else if (message.top !== undefined) {
             loading.classList.remove('active');
             data = message.top;
+            const emptyEl = document.getElementById('empty');
+            emptyEl.textContent = 'No profiling data loaded.';
+            emptyEl.style.color = '';
             render();
         } else if (message.callersFor !== undefined) {
             insertLazyCallers(message.callersFor, message.callers);
         } else if (message.live !== undefined) {
             liveDot.classList.toggle('active', !!message.live);
+        } else if (message.error) {
+            loading.classList.remove('active');
+            data = [];
+            render();
+            const emptyEl = document.getElementById('empty');
+            emptyEl.textContent = 'Profiling failed. Check the Austin output channel for details.';
+            emptyEl.style.color = 'var(--vscode-errorForeground, #f48771)';
         }
     });
 

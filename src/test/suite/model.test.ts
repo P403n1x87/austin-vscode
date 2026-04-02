@@ -382,3 +382,58 @@ suite('AustinStats — paused flag', () => {
         assert.strictEqual(stats.paused, true);
     });
 });
+
+
+// ---------------------------------------------------------------------------
+// AustinStats — error callbacks
+// ---------------------------------------------------------------------------
+suite('AustinStats — error callbacks', () => {
+
+    test('notifyError() fires a registered error callback', () => {
+        const stats = new AustinStats();
+        let called = 0;
+        stats.registerErrorCallback(() => { called++; });
+        stats.notifyError();
+        assert.strictEqual(called, 1);
+    });
+
+    test('notifyError() fires all registered error callbacks', () => {
+        const stats = new AustinStats();
+        let a = 0, b = 0;
+        stats.registerErrorCallback(() => { a++; });
+        stats.registerErrorCallback(() => { b++; });
+        stats.notifyError();
+        assert.strictEqual(a, 1);
+        assert.strictEqual(b, 1);
+    });
+
+    test('notifyError() does not fire before-callbacks', () => {
+        const stats = new AustinStats();
+        let called = 0;
+        stats.registerBeforeCallback(() => { called++; });
+        stats.notifyError();
+        assert.strictEqual(called, 0);
+    });
+
+    test('notifyError() does not fire after-callbacks', () => {
+        const stats = new AustinStats();
+        let called = 0;
+        stats.registerAfterCallback(() => { called++; });
+        stats.notifyError();
+        assert.strictEqual(called, 0);
+    });
+
+    test('notifyError() can be called multiple times', () => {
+        const stats = new AustinStats();
+        let called = 0;
+        stats.registerErrorCallback(() => { called++; });
+        stats.notifyError();
+        stats.notifyError();
+        assert.strictEqual(called, 2);
+    });
+
+    test('notifyError() with no registered callbacks does not throw', () => {
+        const stats = new AustinStats();
+        assert.doesNotThrow(() => stats.notifyError());
+    });
+});

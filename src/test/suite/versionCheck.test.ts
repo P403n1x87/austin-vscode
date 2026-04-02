@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
-import { checkAustinVersion, AustinVersionError } from '../../utils/versionCheck';
+import { AUSTIN_MIN_MAJOR, checkAustinVersion, AustinVersionError } from '../../utils/versionCheck';
 
 
 // ---------------------------------------------------------------------------
@@ -31,6 +31,38 @@ function makeFakeAustin(versionLine: string): string {
     fs.chmodSync(scriptPath, 0o755);
     return scriptPath;
 }
+
+
+// ---------------------------------------------------------------------------
+// AUSTIN_MIN_MAJOR
+// ---------------------------------------------------------------------------
+suite('AUSTIN_MIN_MAJOR', () => {
+
+    test('is a positive integer', () => {
+        assert.ok(Number.isInteger(AUSTIN_MIN_MAJOR) && AUSTIN_MIN_MAJOR > 0);
+    });
+
+    test('AustinVersionError message references AUSTIN_MIN_MAJOR', () => {
+        const err = new AustinVersionError('3.6.0');
+        assert.ok(
+            err.message.includes(`${AUSTIN_MIN_MAJOR}.0.0`),
+            `expected message to contain '${AUSTIN_MIN_MAJOR}.0.0', got: ${err.message}`
+        );
+    });
+
+    test('version equal to AUSTIN_MIN_MAJOR resolves', () => {
+        return assert.doesNotReject(
+            checkAustinVersion(makeFakeAustin(`austin ${AUSTIN_MIN_MAJOR}.0.0`))
+        );
+    });
+
+    test('version one major below AUSTIN_MIN_MAJOR rejects with AustinVersionError', () => {
+        return assert.rejects(
+            checkAustinVersion(makeFakeAustin(`austin ${AUSTIN_MIN_MAJOR - 1}.9.9`)),
+            (err: unknown) => err instanceof AustinVersionError
+        );
+    });
+});
 
 
 // ---------------------------------------------------------------------------
