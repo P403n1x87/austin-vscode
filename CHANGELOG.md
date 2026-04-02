@@ -1,5 +1,47 @@
 # Change Log
 
+## [1.0.0]
+
+### Flame Graph
+
+- Replaced the third-party D3 flame graph with a fully custom canvas-based
+  implementation featuring smooth zoom animations, keyboard-navigable search,
+  and ancestor context rows that remain visible while zoomed in.
+
+- Added a shareable interactive SVG export — the **Share** button generates a
+  self-contained SVG flame graph that can be opened in any browser.
+
+### Session Control
+
+- **Attach to process** (⇧⌃F5 / Ctrl+Shift+F5): start profiling any running
+  Python process by selecting it from a live process list without restarting it.
+
+- **Pause / Resume**: suspend and continue UI updates mid-session (collection
+  continues in the background).
+
+### Live Profiling
+
+- Real-time flame graph, call stacks, and top-functions views that update as
+  samples stream in during a live session using the Profile with Austin command,
+  or the new Attach to process command.
+
+### Call Stacks & Top Functions Panels
+
+- **Top Functions**: added a filter bar to narrow the list by scope or module
+  name; caller rows now show a contribution percentage bar, an expand/collapse
+  animation, and a distinct background to visually group the expanded callers.
+  Hovering a row shows the caller count.
+
+- **Call Stacks**: clicking a frame syncs the flame graph zoom to the same
+  call path; a "Sync with flame graph" toggle controls this behavior.
+
+- Both panels show a sortable **Own** and **Total** column.
+
+### Other Improvements
+
+- Collapse-all buttons in the call stacks and top panels now correctly reset
+  all expanded state before re-rendering.
+
 ## [0.17.3]
 
 - - Fixed regression for support for paths with spaces in Austin tasks.
