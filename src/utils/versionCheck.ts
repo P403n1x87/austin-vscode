@@ -1,11 +1,11 @@
 import { execFile } from "child_process";
 
 
-const MIN_MAJOR = 4;
+export const AUSTIN_MIN_MAJOR = 4;
 
 export class AustinVersionError extends Error {
     constructor(public readonly version: string) {
-        super(`Unsupported Austin version: ${version}. Please upgrade to ${MIN_MAJOR}.0.0 or newer.`);
+        super(`Unsupported Austin version: ${version}. Please upgrade to ${AUSTIN_MIN_MAJOR}.0.0 or newer.`);
     }
 }
 
@@ -24,7 +24,7 @@ export function checkAustinVersion(austinPath: string): Promise<void> {
                 return;
             }
             const major = parseInt(match[1], 10);
-            if (major < MIN_MAJOR) {
+            if (major < AUSTIN_MIN_MAJOR) {
                 reject(new AustinVersionError(match[0]));
                 return;
             }

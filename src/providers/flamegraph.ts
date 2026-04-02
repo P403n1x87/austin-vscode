@@ -244,6 +244,44 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 			</html>`;
     }
 
+    public showError() {
+        if (this._view === undefined || this._view.webview === undefined) {
+            return;
+        }
+        this._initialized = false;
+        this._flameHtmlSet = false;
+        this._sessionActive = false;
+        const webview = this._view.webview;
+        const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
+
+        webview.html = `<!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <link rel="stylesheet" type="text/css" href="${austinCssUri}">
+            <style>
+                .error-label { color: rgba(239,68,68,0.8); font-size: 12px; margin-top: 8px; }
+            </style>
+        </head>
+        <body>
+            <div class="box">
+                <div class="center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="10" fill="rgba(239,68,68,0.12)" stroke="rgba(239,68,68,0.7)" stroke-width="1.5"/>
+                        <line x1="8" y1="8" x2="16" y2="16" stroke="rgba(239,68,68,0.8)" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="16" y1="8" x2="8" y2="16" stroke="rgba(239,68,68,0.8)" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div class="center error-label">Profiling failed. Check the Austin output channel for details.</div>
+                <div class="center" style="margin-top:12px"><button onclick="onOpen()">OPEN</button></div>
+            </div>
+            <script>
+            const vscode = acquireVsCodeApi();
+            function onOpen() { vscode.postMessage("open"); }
+            </script>
+        </body>
+        </html>`;
+    }
+
     private _setWelcomeHtml() {
         if (this._view === undefined || this._view.webview === undefined) {
             return;

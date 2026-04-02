@@ -77,6 +77,10 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
         this._view?.webview.postMessage({ loading: true });
     }
 
+    public showError() {
+        this._view?.webview.postMessage({ error: true });
+    }
+
     public showLive() {
         this._view?.webview.postMessage({ live: true });
     }

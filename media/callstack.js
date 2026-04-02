@@ -17,11 +17,17 @@
         if (msg.loading) {
             treeData = null;
             expandedPaths.clear();
+            const emptyEl = document.getElementById('empty');
+            emptyEl.textContent = 'No profiling data loaded.';
+            emptyEl.style.color = '';
             render();
             loading.classList.add('active');
         } else if (msg.tree !== undefined) {
             loading.classList.remove('active');
             treeData = msg.tree;
+            const emptyEl = document.getElementById('empty');
+            emptyEl.textContent = 'No profiling data loaded.';
+            emptyEl.style.color = '';
             render();
         } else if (msg.childrenFor !== undefined) {
             insertLazyChildren(msg.childrenFor, msg.children);
@@ -29,6 +35,13 @@
             if (syncToggle.checked) { focusPath(msg.focus.pathKey); }
         } else if (msg.live !== undefined) {
             liveDot.classList.toggle('active', !!msg.live);
+        } else if (msg.error) {
+            loading.classList.remove('active');
+            treeData = null;
+            render();
+            const emptyEl = document.getElementById('empty');
+            emptyEl.textContent = 'Profiling failed. Check the Austin output channel for details.';
+            emptyEl.style.color = 'var(--vscode-errorForeground, #f48771)';
         }
     });
 
