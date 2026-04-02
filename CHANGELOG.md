@@ -42,6 +42,12 @@
 - Collapse-all buttons in the call stacks and top panels now correctly reset
   all expanded state before re-rendering.
 
+- Fixed variable substitution in Austin task definitions. Previously, only
+  `${file}` and `${workspaceFolder}` were resolved; all other variables
+  (including `${input:…}`, `${env:NAME}`, and `${cwd}`) were passed literally
+  to the profiled process. All standard VS Code task variables are now
+  supported.
+
 ## [0.17.3]
 
 - - Fixed regression for support for paths with spaces in Austin tasks.

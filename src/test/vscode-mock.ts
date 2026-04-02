@@ -30,8 +30,13 @@ const mock = {
     window: {
         showErrorMessage: () => undefined,
         showInformationMessage: () => undefined,
+        showInputBox: () => Promise.resolve(undefined),
+        showQuickPick: () => Promise.resolve(undefined),
         get activeTextEditor() { return undefined; },
         createTextEditorDecorationType: () => ({ dispose: () => undefined }),
+    },
+    commands: {
+        executeCommand: () => Promise.resolve(undefined),
     },
     Uri: {
         joinPath: (base: { fsPath: string }, ...parts: string[]) => ({
