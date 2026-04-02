@@ -37,6 +37,15 @@
 
 - Both panels show a sortable **Own** and **Total** column.
 
+### AI Chat Integration
+
+- Added an MCP server that exposes profiling data to AI chat sessions (e.g.
+  Claude Code). The server starts lazily when the first profiling data becomes
+  available and listens on port 7891 by default (configurable via
+  `austin.mcpPort`; set to `0` to disable). Three tools are provided:
+  `get_top`, `get_call_stacks`, and `get_metadata`. See the README for setup
+  instructions.
+
 ### Other Improvements
 
 - Collapse-all buttons in the call stacks and top panels now correctly reset

@@ -161,6 +161,46 @@ mode and the extension won't work if in binary mode.
 Python module has multiple methods with the same names (e.g. `__init__`), since
 the function names collected by Austin are not fully qualified. -->
 
+## AI Chat Integration (MCP)
+
+The extension exposes profiling data to AI chat sessions (such as
+[Claude Code](https://claude.ai/code)) via an
+[MCP](https://modelcontextprotocol.io/) server. The server starts lazily the
+first time profiling data becomes available, and stops when the extension
+deactivates.
+
+The server listens on port **7891** by default (configurable via
+`austin.mcpPort`; set to `0` to disable).
+
+To connect Claude Code to the server, add a `.mcp.json` file to your project
+root:
+
+```json
+{
+    "mcpServers": {
+        "austin": {
+            "type": "http",
+            "url": "http://localhost:7891/mcp"
+        }
+    }
+}
+```
+
+> [!NOTE]
+> Adjust the port in the URL if you have changed `austin.mcpPort`.
+
+Once connected, the following tools are available in your chat session:
+
+| Tool | Description |
+|---|---|
+| `get_top` | Top functions by own time. Accepts an optional `limit`. |
+| `get_call_stacks` | Process→thread→function call-stack tree. Accepts an optional `depth` (default: 5). |
+| `get_metadata` | Profiling session metadata: source file, mode, interval, sample count. |
+
+Percentage values are relative to the total observed metric (CPU time, wall
+time, or memory, depending on the profiling mode).
+
+
 ## Configuration
 
 Whenever you have an active Python script, the sampling interval and mode

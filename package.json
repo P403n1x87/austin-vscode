@@ -77,6 +77,11 @@
             "Both percent and absolute metric values"
           ],
           "default": "Percent"
+        },
+        "austin.mcpPort": {
+          "description": "Port for the Austin MCP server, which exposes profiling data to AI chat sessions (e.g. Claude Code). The server starts lazily when the first profiling data becomes available. Set to 0 to disable.",
+          "type": "number",
+          "default": 7891
         }
       }
     },
