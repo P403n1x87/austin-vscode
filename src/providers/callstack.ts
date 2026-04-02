@@ -70,6 +70,10 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
                 if (this._stats) { this._postData(this._stats); }
                 return;
             }
+            if (data === 'open') {
+                vscode.commands.executeCommand('austin-vscode.load');
+                return;
+            }
             if (data.module) {
                 vscode.commands.executeCommand('austin-vscode.openSourceAtLine', data.module, data.line || 0);
             }
@@ -281,6 +285,20 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
             text-align: center;
             font-style: italic;
         }
+        .open-btn {
+            display: block;
+            margin: 10px auto 0;
+            padding: 4px 14px;
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+        }
+        .open-btn:hover { background: var(--vscode-button-hoverBackground); }
         #loading {
             display: none;
             position: fixed;
@@ -319,7 +337,10 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         </button>
         <span id="live-dot" title="Live session active"></span>
     </div>
-    <div id="empty" class="empty">No profiling data loaded.</div>
+    <div id="empty" class="empty">
+        <div>No profiling data loaded.</div>
+        <button class="open-btn" id="open-btn">OPEN</button>
+    </div>
     <table id="table" style="display:none">
         <colgroup>
             <col>
