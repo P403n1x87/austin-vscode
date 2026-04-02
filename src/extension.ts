@@ -9,6 +9,7 @@ import { AustinProfileTaskProvider } from './providers/task';
 import { AustinRuntimeSettings } from './settings';
 import { AustinMode } from './types';
 import { AUSTIN_MIN_MAJOR, AustinVersionError, checkAustinVersion } from './utils/versionCheck';
+import { AustinMcpServer } from './providers/mcp';
 
 
 export function activate(context: vscode.ExtensionContext) {
@@ -17,6 +18,13 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	const stats = new AustinStats();
+
+	const mcpPort = AustinRuntimeSettings.getMcpPort();
+	if (mcpPort > 0) {
+		const mcpServer = new AustinMcpServer(mcpPort);
+		stats.registerAfterCallback((s) => mcpServer.update(s));
+		context.subscriptions.push({ dispose: () => mcpServer.dispose() });
+	}
 
 	context.subscriptions.push(
 		vscode.window.onDidChangeActiveTextEditor((editor) => {
