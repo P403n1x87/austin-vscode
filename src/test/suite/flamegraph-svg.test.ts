@@ -4,26 +4,26 @@ import { generateInteractiveSVG } from '../../flamegraph-svg';
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const simpleHierarchy = {
+    kind: 'root' as const,
     key: 'root',
     name: 'root',
     value: 1000,
     children: [
-        { key: 'a', name: 'func_a', value: 600, children: [], data: { name: 'func_a', file: '/app/module_a.py' } },
-        { key: 'b', name: 'func_b', value: 400, children: [], data: { name: 'func_b', file: '/app/module_b.py' } },
+        { kind: 'frame' as const, key: 'a', name: 'func_a', value: 600, children: [], file: '/app/module_a.py' },
+        { kind: 'frame' as const, key: 'b', name: 'func_b', value: 400, children: [], file: '/app/module_b.py' },
     ],
-    data: {},
 };
 
 // tiny_func occupies 1/100 of width = 12 px at INIT_W=1200, below LABEL_MIN_W=30
 const hierWithNarrowFrame = {
+    kind: 'root' as const,
     key: 'root',
     name: 'root',
     value: 100,
     children: [
-        { key: 'big',  name: 'big_func',  value: 99, children: [], data: { name: 'big_func',  file: 'a.py' } },
-        { key: 'tiny', name: 'tiny_func', value: 1,  children: [], data: { name: 'tiny_func', file: 'b.py' } },
+        { kind: 'frame' as const, key: 'big',  name: 'big_func',  value: 99, children: [], file: 'a.py' },
+        { kind: 'frame' as const, key: 'tiny', name: 'tiny_func', value: 1,  children: [], file: 'b.py' },
     ],
-    data: {},
 };
 
 // Helper: decode the base64 data blob embedded in the SVG
@@ -107,7 +107,7 @@ suite('generateInteractiveSVG — frames', () => {
 
     test('frame title escapes XML special characters', () => {
         const evil = {
-            key: 'root', name: '<root>', value: 100, children: [], data: { name: '<root>', file: 'a.py' },
+            kind: 'root' as const, key: 'root', name: '<root>', value: 100, children: [], file: 'a.py',
         };
         const svg = generateInteractiveSVG(evil, 'cpu');
         assert.ok(!svg.includes('<<root>>'),       'raw angle brackets must be escaped');

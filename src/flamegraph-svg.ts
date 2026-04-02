@@ -28,21 +28,12 @@ function nodeHash(text: string): number {
 }
 
 function colorFor(node: any): string {
-    if (!isNaN(+node.name)) { return '#808080'; }
-    const d = node.data ?? {};
-    const scope: string = d.name || node.name || '';
-    const mod: string | undefined = d.file;
-    if (!mod) { return hslToHex(0, 10, 70); }
-    const sat = nodeHash(scope) % 20;
-    switch (scope.charAt(0)) {
-        case 'P': return hslToHex(120, sat, 70);
-        case 'T': return hslToHex(240, sat, 70);
-        default: {
-            const h = nodeHash(mod) % 360;
-            const s = nodeHash(scope) % 10;
-            return hslToHex(h >= 0 ? h : -h, (mod.endsWith('.py') ? 60 : 20) + s, 60);
-        }
-    }
+    if (node.kind === 'process') { return hslToHex(120, nodeHash(node.name) % 20, 70); }
+    if (node.kind === 'thread')  { return hslToHex(240, nodeHash(node.name) % 20, 70); }
+    if (!node.file) { return hslToHex(0, 10, 70); }
+    const h = nodeHash(node.file) % 360;
+    const s = nodeHash(node.name || '') % 10;
+    return hslToHex(h >= 0 ? h : -h, (node.file.endsWith('.py') ? 60 : 20) + s, 60);
 }
 
 function nodeBasename(p: string): string {
@@ -153,12 +144,11 @@ export function generateInteractiveSVG(hierarchy: any, mode: string, logoB64?: s
         const id: number = f.node._id;
         const fy = HEADER_H + f.y;
         const opacity = f.ancestor ? 0.45 : 1;
-        const d = f.node.data ?? {};
         const funcName: string = f.node.name || '';
-        const file: string = d.file ? nodeBasename(d.file) : '';
+        const file: string = f.node.file ? nodeBasename(f.node.file) : '';
         const pct = (f.node.value / root.value * 100).toFixed(2) + '%';
         const titleText = escXml(
-            funcName + (d.file ? '\n' + d.file : '') + '\n' + formatValue(f.node.value, mode) + ' (' + pct + ')'
+            funcName + (f.node.file ? '\n' + f.node.file : '') + '\n' + formatValue(f.node.value, mode) + ' (' + pct + ')'
         );
         const labelAlpha = f.ancestor ? 0.6 : 0.9;
 
@@ -272,14 +262,11 @@ function buildEmbeddedScript(): string {
     }
     function nhash(t) { let h = 0; for (let i = 0; i < t.length; i++) { h = t.charCodeAt(i) + ((h << 5) - h); } return h; }
     function colorFor(n) {
-        if (!isNaN(+n.name)) { return '#808080'; }
-        const d = n.data || {}, scope = d.name || n.name || '', mod = d.file;
-        if (!mod) { return hslToHex(0, 10, 70); }
-        const sat = nhash(scope) % 20;
-        if (scope[0] === 'P') { return hslToHex(120, sat, 70); }
-        if (scope[0] === 'T') { return hslToHex(240, sat, 70); }
-        const h = nhash(mod) % 360;
-        return hslToHex(h >= 0 ? h : -h, (mod.endsWith('.py') ? 60 : 20) + nhash(scope) % 10, 60);
+        if (n.kind === 'process') { return hslToHex(120, nhash(n.name) % 20, 70); }
+        if (n.kind === 'thread')  { return hslToHex(240, nhash(n.name) % 20, 70); }
+        if (!n.file) { return hslToHex(0, 10, 70); }
+        const h = nhash(n.file) % 360;
+        return hslToHex(h >= 0 ? h : -h, (n.file.endsWith('.py') ? 60 : 20) + nhash(n.name || '') % 10, 60);
     }
     function basename(p) { return p ? p.replace(/\\/g, '/').split('/').pop() || p : ''; }
     function fmt(v) {
@@ -411,9 +398,8 @@ function buildEmbeddedScript(): string {
                 rect.setAttribute('stroke-width', '0.5');
                 return;
             }
-            const d = node.data || {};
             const match = (node.name || '').toLowerCase().includes(searchTerm) ||
-                          (d.file || '').toLowerCase().includes(searchTerm);
+                          (node.file || '').toLowerCase().includes(searchTerm);
             rect.setAttribute('stroke',       match ? 'rgba(255,230,80,0.95)' : 'rgba(0,0,0,0.18)');
             rect.setAttribute('stroke-width', match ? '2' : '0.5');
         });
@@ -433,14 +419,13 @@ function buildEmbeddedScript(): string {
         el.addEventListener('mouseenter', function () {
             const node = nodeMap.get(+this.getAttribute('data-id'));
             if (!node) { return; }
-            const d    = node.data || {};
             const pct  = (node.value / TOTAL * 100).toFixed(2) + '%';
             const icon = mode === 'memory' ? '\u{1F4E6}\uFE0E' : '\u23F1\uFE0E';
             const ft   = document.getElementById('footer-text');
             if (ft) {
                 ft.textContent = icon + ' ' + fmt(node.value) + ' (' + pct + ')' +
-                    '  \u00B7  ' + (d.name || node.name || '') +
-                    (d.file ? '  ' + basename(d.file) : '');
+                    '  \u00B7  ' + (node.name || '') +
+                    (node.file ? '  ' + basename(node.file) : '');
             }
         });
         el.addEventListener('mouseleave', function () {

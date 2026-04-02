@@ -10,7 +10,7 @@
     /** @param {any} node @param {string} parentKey */
     function addPathKeys(node, parentKey) {
         const myKey = parentKey ? parentKey + '/' + node.name : node.name;
-        if (node.data && typeof node.data === 'object') { node.data.pathKey = myKey; }
+        node.pathKey = myKey;
         if (node.children) {
             for (const child of node.children) { addPathKeys(child, myKey); }
         }
@@ -162,8 +162,7 @@
                 const cy = y + CELL_H / 2;
                 const labelAlpha = f.ancestor ? 0.6 : 0.9;
                 const funcName = f.node.name || '';
-                const data = (f.node.data && typeof f.node.data === 'object') ? f.node.data : {};
-                const file = data.file ? basename(data.file) : '';
+                const file = f.node.file ? basename(f.node.file) : '';
 
                 // Function name — prominent
                 ctx.font = primaryFont;
@@ -296,12 +295,11 @@
     function applySearch() {
         for (const f of frames) {
             if (!searchTerm) { f.highlighted = false; continue; }
-            const data = (f.node.data && typeof f.node.data === 'object') ? f.node.data : {};
             if (searchMode === 'path') {
-                f.highlighted = data.pathKey === searchTerm;
+                f.highlighted = f.node.pathKey === searchTerm;
             } else {
                 f.highlighted = (f.node.name || '').indexOf(searchTerm) !== -1 ||
-                    !!(data.file && data.file.indexOf(searchTerm) !== -1);
+                    !!(f.node.file && f.node.file.indexOf(searchTerm) !== -1);
             }
         }
     }
@@ -313,7 +311,7 @@
             for (const child of hierarchy.children) { addPathKeys(child, ''); }
         }
         // Preserve zoom and search across live updates by re-finding the node
-        const prevZoomKey = zoomNode && zoomNode.data ? zoomNode.data.pathKey : null;
+        const prevZoomKey = zoomNode ? zoomNode.pathKey : null;
         rootNode = hierarchy;
         hoveredFrame = null;
         if (prevZoomKey) {
@@ -354,9 +352,7 @@
 
     /** @param {any} node @param {string} pathKey @returns {any} */
     function findByPathKey(node, pathKey) {
-        if (node.data && typeof node.data === 'object' && node.data.pathKey === pathKey) {
-            return node;
-        }
+        if (node.pathKey === pathKey) { return node; }
         if (node.children) {
             for (const child of node.children) {
                 const found = findByPathKey(child, pathKey);
@@ -388,8 +384,8 @@
         const f = hitTest(rowIndex, e.clientX - rect.left, e.clientY - rect.top);
         if (!f) { return; }
         zoomTo(f.node);
-        if (f.node.data && typeof f.node.data === 'object' && f.node.data.file) {
-            vscode.postMessage(f.node.data);
+        if (f.node.file) {
+            vscode.postMessage({ file: f.node.file, name: f.node.name, line: f.node.line, source: f.node.source });
         }
     });
 
