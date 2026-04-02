@@ -61,7 +61,7 @@ export class TopStats {
 }
 
 export interface AustinStats {
-    hierarchy: D3Hierarchy;
+    hierarchy: FlameNode;
     locationMap: Map<string, Map<string, [FrameObject, number, number]>>;
     callStack: TopStats;
     top: Map<string, TopStats>;
@@ -82,11 +82,11 @@ export class AustinStats implements AustinStats {
         this.overallTotal = 0;
         this.top = new Map();
         this.hierarchy = {
+            kind: 'root',
             key: "",
             name: "",
             value: 0,
             children: [],
-            data: "root",
         };
         this.callStack = new TopStats();
         this._beforeCbs = [];
@@ -101,11 +101,11 @@ export class AustinStats implements AustinStats {
         this.locationMap.clear();
         this.overallTotal = 0;
         this.hierarchy = {
+            kind: 'root',
             key: "",
             name: this.source!,
             value: 0,
             children: [],
-            data: "root",
         };
         this.callStack = new TopStats();
         this.metadata = new Map();
@@ -190,77 +190,44 @@ export class AustinStats implements AustinStats {
         let stats = this.hierarchy;
         stats.value += metric;
 
-        let updateContainer = (container: D3Hierarchy[], frame: FrameObject, keyFactory: (frame: FrameObject) => string, newDataFactory: (frame: FrameObject) => any) => {
-            const key: string = keyFactory(frame);
-            for (let e of container) {
+        const updateContainer = (container: FlameNode[], frame: FrameObject) => {
+            const key = `${frame.module}:${frame.scope}`;
+            for (const e of container) {
                 if (e.key === key) {
                     e.value += metric;
                     return e.children;
                 }
             }
-            const newContainer: D3Hierarchy[] = [];
+            const children: FlameNode[] = [];
             container.push({
-                key: key,
+                kind: 'frame',
+                key,
                 name: frame.scope,
                 value: metric,
-                children: newContainer,
-                data: newDataFactory(frame),
+                children,
+                file: frame.module,
+                line: frame.line,
+                source: this.source,
             });
-            return newContainer;
+            return children;
         };
 
-        let getGroupContainer = (key: string, container: D3Hierarchy[]) => {
-            for (let e of container) {
-                if (e.name === key) {
+        const getGroupContainer = (kind: 'process' | 'thread', name: string, container: FlameNode[]) => {
+            for (const e of container) {
+                if (e.key === name) {
                     e.value += metric;
                     return e.children;
                 }
             }
-            const newContainer: D3Hierarchy[] = [];
-            container.push({
-                key: key,
-                name: key,
-                value: metric,
-                children: newContainer,
-                data: {},
-            });
-            return newContainer;
+            const children: FlameNode[] = [];
+            container.push({ kind, key: name, name, value: metric, children });
+            return children;
         };
 
-        let container = getGroupContainer(`Thread ${tid}`, getGroupContainer(`Process ${pid}`, stats.children));
+        let container = getGroupContainer('thread', `Thread ${tid}`, getGroupContainer('process', `Process ${pid}`, stats.children));
 
         frameList.forEach((fo) => {
-            if (false) { // TODO: Consider whether to re-enable per-line flamegraphs or not.
-                container = updateContainer(
-                    container,
-                    fo,
-                    (fo) => { return fo.line ? `${fo.scope} (${fo.module})` : fo.scope; },
-                    (fo) => { return { "file": fo.module, "source": this.source }; }
-                );
-                if (fo.line) {
-                    container = updateContainer(
-                        container,
-                        fo,
-                        (fo) => { return `${fo.line}`; },
-                        (fo) => { return { "file": fo.module, "line": fo.line, "source": this.source }; }
-                    );
-                };
-            }
-            else {
-                container = updateContainer(
-                    container,
-                    fo,
-                    (fo) => { return `${fo.module}:${fo.scope}`; },
-                    (fo) => {
-                        return {
-                            file: fo.module,
-                            name: fo.scope,
-                            line: fo.line,
-                            source: this.source
-                        };
-                    }
-                );
-            }
+            container = updateContainer(container, fo);
         });
     }
 
@@ -476,10 +443,18 @@ function parseFrame(frame: string): FrameObject {
 }
 
 
-interface D3Hierarchy {
+export type FlameNodeKind = 'root' | 'process' | 'thread' | 'frame';
+
+export interface FlameNode {
+    kind: FlameNodeKind;
     key: string;
     name: string;
     value: number;
-    children: D3Hierarchy[];
-    data?: any;
+    children: FlameNode[];
+    // Frame-specific fields (only present when kind === 'frame'):
+    file?: string;
+    line?: number;
+    source?: string | null;
+    // Added by the webview frontend during rendering:
+    pathKey?: string;
 }

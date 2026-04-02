@@ -36,25 +36,12 @@
 
     /** @param {any} node */
     function colorFor(node) {
-        if (!isNaN(+node.name)) { return '#808080'; }
-
-        const data = (node.data && typeof node.data === 'object') ? node.data : {};
-        const scope = data.name || node.name || '';
-        const module = data.file;
-
-        if (!module) { return hslToHex(0, 10, 70); }
-
-        const sat = hash(scope) % 20;
-        switch (scope.charAt(0)) {
-            case 'P': return hslToHex(120, sat, 70);
-            case 'T': return hslToHex(240, sat, 70);
-            default: {
-                const h = hash(module) % 360;
-                const s = hash(scope) % 10;
-                const isPy = module.endsWith('.py');
-                return hslToHex(h >= 0 ? h : -h, (isPy ? 60 : 20) + s, 60);
-            }
-        }
+        if (node.kind === 'process') { return hslToHex(120, hash(node.name) % 20, 70); }
+        if (node.kind === 'thread')  { return hslToHex(240, hash(node.name) % 20, 70); }
+        if (!node.file) { return hslToHex(0, 10, 70); }
+        const h = hash(node.file) % 360;
+        const s = hash(node.name || '') % 10;
+        return hslToHex(h >= 0 ? h : -h, (node.file.endsWith('.py') ? 60 : 20) + s, 60);
     }
 
     /** @param {string} text */
@@ -97,12 +84,11 @@
      * @param {any} node @param {number} rootValue @param {string} mode
      */
     function footerText(node, rootValue, mode) {
-        const data = (node.data && typeof node.data === 'object') ? node.data : {};
         const icon   = mode === 'memory' ? '\u{1F4E6}' : '\u23F1';
         const pct    = (node.value / rootValue * 100).toFixed(2) + '%';
         const metric = icon + '\uFE0E ' + formatValue(node.value, mode) + ' (' + pct + ')';
-        const scope  = esc(data.name || node.name || '');
-        const file   = data.file ? ' <span style="opacity:0.45">' + esc(data.file) + '</span>' : '';
+        const scope  = esc(node.name || '');
+        const file   = node.file ? ' <span style="opacity:0.45">' + esc(node.file) + '</span>' : '';
         return metric + ' &nbsp;\u00B7&nbsp; ' + scope + file;
     }
 
