@@ -163,8 +163,7 @@ the function names collected by Austin are not fully qualified. -->
 
 ## AI Chat Integration (MCP)
 
-The extension exposes profiling data to AI chat sessions (such as
-[Claude Code](https://claude.ai/code)) via an
+The extension exposes profiling data to AI chat sessions via an
 [MCP](https://modelcontextprotocol.io/) server. The server starts lazily the
 first time profiling data becomes available, and stops when the extension
 deactivates.
@@ -172,8 +171,8 @@ deactivates.
 The server listens on port **7891** by default (configurable via
 `austin.mcpPort`; set to `0` to disable).
 
-To connect Claude Code to the server, add a `.mcp.json` file to your project
-root:
+For example, to connect Claude Code to the server, add a `.mcp.json` file to
+your project root:
 
 ```json
 {
