@@ -14,21 +14,6 @@ function maybeEnquote(arg: string): string {
   return arg.indexOf(' ') >= 0 ? `"${arg}"` : arg;
 }
 
-
-function resolveArgs(args: string[]): string[] {
-  const resolvedArgs: string[] = [];
-  args.forEach((arg) => {
-    if (arg.indexOf("${workspaceFolder}") >= 0 && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length === 1) {
-      resolvedArgs.push(arg.replace("${workspaceFolder}", vscode.workspace.workspaceFolders[0].uri.fsPath));
-    } else if (arg.indexOf("${file}") >= 0 && vscode.window.activeTextEditor) {
-      resolvedArgs.push(arg.replace("${file}", vscode.window.activeTextEditor.document.fileName));
-    } else {
-      resolvedArgs.push(arg);
-    }
-  });
-  return resolvedArgs;
-}
-
 export class AustinCommandExecutor implements vscode.Pseudoterminal {
   private austinProcess: ChildProcess | undefined;
   private _killed: boolean = false;
@@ -51,7 +36,7 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
 
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
     this.writeEmitter.fire(`Starting Profiler in ${this.cwd}.\r\n`);
-    let resolvedArgs = resolveArgs(this.command.args);
+    const resolvedArgs = this.command.args;
 
     let env: DotenvPopulateInput = {};
     for (let key in process.env) {

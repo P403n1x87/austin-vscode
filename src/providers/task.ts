@@ -5,6 +5,7 @@ import { AustinStats } from "../model";
 import { isPythonExtensionAvailable } from "../utils/pythonExtension";
 import { AustinMode } from "../types";
 import { AustinRuntimeSettings } from "../settings";
+import { resolveVariable, resolveVariables } from "../utils/variableResolver";
 import { isAbsolute } from "path";
 import { platform } from "os";
 
@@ -79,17 +80,24 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
           cwd = vscode.workspace.getWorkspaceFolder(vscode.window.activeTextEditor.document.uri)?.uri.fsPath;
         }
 
+        const resolvedFile = definition.file
+          ? await resolveVariable(definition.file, cwd)
+          : undefined;
+        const resolvedArgs = definition.args
+          ? await resolveVariables(definition.args, cwd)
+          : undefined;
+
         let resolvedPath: vscode.Uri | undefined = undefined;
-        if (definition.file) {
-          resolvedPath = isAbsolute(definition.file)
-            ? vscode.Uri.file(definition.file)
-            : vscode.Uri.joinPath(vscode.Uri.file(cwd!), definition.file);
+        if (resolvedFile) {
+          resolvedPath = isAbsolute(resolvedFile)
+            ? vscode.Uri.file(resolvedFile)
+            : vscode.Uri.joinPath(vscode.Uri.file(cwd!), resolvedFile);
         }
 
         const command = getAustinCommand(
           resolvedPath?.fsPath,
           definition.command,
-          definition.args,
+          resolvedArgs,
           definition.austinArgs,
           definition.interval,
           definition.mode,
