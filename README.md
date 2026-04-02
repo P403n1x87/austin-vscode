@@ -12,7 +12,7 @@ Profile and analyse your Python application inside VS Code using Austin.
 
 ## Pre-requisites
 
-This extension requires Austin 3. See
+This extension requires Austin 4. See
 [Austin](https://github.com/p403n1x87/austin#installation) for installation
 instructions for your platform. If you want to compile from sources or use one
 of the available release binaries, you can specify the absolute location of the
@@ -150,16 +150,10 @@ activity bar to reveal them.
 
 ### Expression-level heat maps
 
-To enable support for column-level location information, ensure that the Austin
-extension is set up to use the binary mode in the extension settings. Note that
-this requires at least the version 3.5 of Austin to work. Binary mode itself
-only requires Austin 3.4 to work. Earlier Austin versions don't support binary
-mode and the extension won't work if in binary mode.
+The extension supports expression-level profiling data from Austin. This
+requires using CPython 3.11 or above, where column-level information is also
+available to collect.
 
-
-<!-- To toggle line numbers, press <kbd>L</kbd>. This could be useful when the same
-Python module has multiple methods with the same names (e.g. `__init__`), since
-the function names collected by Austin are not fully qualified. -->
 
 ## AI Chat Integration (MCP)
 
