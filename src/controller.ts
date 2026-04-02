@@ -5,6 +5,7 @@ import { isPythonExtensionAvailable } from './utils/pythonExtension';
 import { AustinProfileTaskProvider } from './providers/task';
 import { AustinRuntimeSettings } from './settings';
 import { AustinVersionError, checkAustinVersion } from './utils/versionCheck';
+import psList = require('ps-list');
 
 
 export class AustinController {
@@ -49,19 +50,52 @@ export class AustinController {
     public async attachProcess() {
         if (!await this.checkVersion()) { return; }
 
-        const pidStr = await vscode.window.showInputBox({
-            prompt: "Enter the PID of the Python process to attach to",
-            placeHolder: "e.g. 12345",
-            validateInput: (value) => {
-                if (!/^\d+$/.test(value) || parseInt(value) <= 0) {
-                    return "Please enter a valid process ID (positive integer).";
-                }
-            },
+        const MANUAL_ENTRY = "$(edit) Enter PID manually...";
+
+        let pid: number | undefined;
+
+        const processes = await psList();
+        const pythonProcs = processes
+            .filter(p => /python/i.test(p.name) || /python/i.test(p.cmd ?? ""))
+            .sort((a, b) => a.pid - b.pid)
+            .map(p => ({
+                label: `$(terminal) ${p.pid}`,
+                description: p.name,
+                detail: p.cmd,
+                pid: p.pid,
+            }));
+
+        type ProcItem = typeof pythonProcs[0];
+        type ManualItem = { label: string; pid?: undefined };
+        const items: (ProcItem | ManualItem)[] = [{ label: MANUAL_ENTRY }, ...pythonProcs];
+
+        const picked = await vscode.window.showQuickPick(items, {
+            title: "Attach Austin to Python Process",
+            placeHolder: pythonProcs.length
+                ? "Select a Python process or enter a PID manually"
+                : "No Python processes found — enter a PID manually",
+            matchOnDescription: true,
+            matchOnDetail: true,
         });
 
-        if (!pidStr) { return; }
+        if (!picked) { return; }
 
-        const pid = parseInt(pidStr);
+        if (picked.pid !== undefined) {
+            pid = picked.pid;
+        } else {
+            const pidStr = await vscode.window.showInputBox({
+                prompt: "Enter the PID of the process to attach to",
+                placeHolder: "e.g. 12345",
+                validateInput: (value) => {
+                    if (!/^\d+$/.test(value) || parseInt(value) <= 0) {
+                        return "Please enter a valid process ID (positive integer).";
+                    }
+                },
+            });
+            if (!pidStr) { return; }
+            pid = parseInt(pidStr);
+        }
+
         const task = this.provider.buildTaskFromPid(pid);
         this._currentExecution = await vscode.tasks.executeTask(task);
     }
