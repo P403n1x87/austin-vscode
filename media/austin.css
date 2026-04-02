@@ -76,7 +76,7 @@ button {
 #search-box::placeholder { color: rgba(255,235,205,0.4); }
 #search-box:focus { border-color: rgba(255,255,255,0.5); background: rgba(0,0,0,0.4); }
 
-#header-open {
+#header-open, #header-share {
     margin-left: 4px;
     flex-shrink: 0;
     background: none !important;
@@ -93,7 +93,7 @@ button {
     opacity: 0.75;
 }
 
-#header-open:hover {
+#header-open:hover, #header-share:hover {
     opacity: 1;
     background: rgba(255, 255, 255, 0.1) !important;
 }

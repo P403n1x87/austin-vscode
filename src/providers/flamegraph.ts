@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AustinStats } from '../model';
+import { generateInteractiveSVG } from '../flamegraph-svg';
 
 
 
@@ -62,6 +63,11 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
 
             if (data === "detach") {
                 vscode.commands.executeCommand('austin-vscode.detach');
+                return;
+            }
+
+            if (data === "share") {
+                this._exportSVG();
                 return;
             }
 
@@ -175,7 +181,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 <link rel="stylesheet" type="text/css" href="${austinCssUri}">
             </head>
             <body class="logo">
-                <div id="header"><img id="austin-logo" class="${liveClass}" src="${austinLogoUri}" /><span class="vc" id="mode"></span><input id="search-box" type="text" placeholder="Search…" /><button id="header-open" onclick="${btnOnclick}">${btnText}</button></div>
+                <div id="header"><img id="austin-logo" class="${liveClass}" src="${austinLogoUri}" /><span class="vc" id="mode"></span><input id="search-box" type="text" placeholder="Search…" /><button id="header-share" onclick="onShare()">SHARE</button><button id="header-open" onclick="${btnOnclick}">${btnText}</button></div>
                 <div id="chart"></div>
                 <div id="footer"></div>
 
@@ -184,6 +190,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 <script>
                 function onOpen() { window.vscode.postMessage("open"); }
                 function onDetach() { window.vscode.postMessage("detach"); }
+                function onShare() { window.vscode.postMessage("share"); }
                 window.addEventListener('message', function(e) {
                     var btn = document.getElementById('header-open');
                     var logo = document.getElementById('austin-logo');
@@ -204,6 +211,36 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 </script>
             </body>
 			</html>`;
+    }
+
+    private async _exportSVG(): Promise<void> {
+        if (!this._stats) {
+            vscode.window.showInformationMessage('No flamegraph data to export. Load a profile first.');
+            return;
+        }
+        const mode = this._stats.metadata.get('mode') || 'cpu';
+        const logoBytes = await vscode.workspace.fs.readFile(
+            vscode.Uri.joinPath(this._extensionUri, 'media', 'austin-light.svg')
+        );
+        const logoB64 = Buffer.from(logoBytes).toString('base64');
+        const svg = generateInteractiveSVG(this._stats.hierarchy, mode, logoB64);
+
+        const defaultUri = vscode.workspace.workspaceFolders?.[0]?.uri
+            ? vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, 'flamegraph.svg')
+            : vscode.Uri.file('flamegraph.svg');
+
+        const dest = await vscode.window.showSaveDialog({
+            title: 'Export Flamegraph as Interactive SVG',
+            defaultUri,
+            filters: { 'SVG files': ['svg'] },
+        });
+        if (!dest) { return; }
+
+        await vscode.workspace.fs.writeFile(dest, Buffer.from(svg, 'utf8'));
+
+        vscode.window.showInformationMessage(
+            `Flamegraph exported to ${dest.fsPath} — open in a browser for full interactivity.`
+        );
     }
 
     public showLoading() {
