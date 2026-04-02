@@ -318,7 +318,7 @@
     }
 
     document.getElementById('collapse-all').addEventListener('click', () => {
-        if (treeData) { render(); }
+        if (treeData) { expandedPaths.clear(); render(); }
     });
 
     document.querySelectorAll('th[data-col]').forEach(th => {

@@ -334,7 +334,7 @@
     }
 
     document.getElementById('collapse-all').addEventListener('click', () => {
-        if (data.length > 0) { render(); }
+        if (data.length > 0) { expandedKeys.clear(); render(); }
     });
 
     filterInput.addEventListener('input', e => {
