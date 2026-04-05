@@ -364,6 +364,10 @@
         vscode.postMessage('open');
     });
 
+    document.getElementById('attach-btn').addEventListener('click', () => {
+        vscode.postMessage('attach');
+    });
+
     filterInput.addEventListener('input', e => {
         filterTerm = e.target.value.trim();
         filterClear.classList.toggle('visible', filterTerm.length > 0);

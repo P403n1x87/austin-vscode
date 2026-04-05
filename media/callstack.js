@@ -325,6 +325,10 @@
         vscode.postMessage('open');
     });
 
+    document.getElementById('attach-btn').addEventListener('click', () => {
+        vscode.postMessage('attach');
+    });
+
     document.querySelectorAll('th[data-col]').forEach(th => {
         th.addEventListener('click', () => {
             const col = th.dataset.col;
