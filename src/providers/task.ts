@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { getAustinCommand } from "../utils/commandFactory";
-import { AustinCommandExecutor } from "./executor";
+import { AustinCommandExecutor, setCurrentExecutor } from "./executor";
 import { AustinStats } from "../model";
 import { isPythonExtensionAvailable } from "../utils/pythonExtension";
 import { AustinMode } from "../types";
@@ -17,6 +17,14 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
     private output: vscode.OutputChannel,
   ) { }
 
+  private getSudoCommand(isAttach: boolean): string[] | undefined {
+    // Use sudo for attaching on both macOS and Linux, and for profiling on macOS
+    if (isAttach || platform() === "darwin") {
+      return ["sudo"];
+    }
+    return undefined;
+  }
+
   public provideTasks(): Thenable<vscode.Task[]> | undefined {
     if (!this.austinPromise) {
       // TODO: get automatic tasks, like "profile current file"
@@ -29,7 +37,7 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
       {
         file: path.fsPath,
         type: "austin",
-        command: platform() === "darwin" ? ["sudo"] : undefined,
+        command: this.getSudoCommand(false),
         mode: AustinRuntimeSettings.getMode(),
       },
       vscode.TaskScope.Workspace,
@@ -41,7 +49,7 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
       {
         pid,
         type: "austin",
-        command: platform() === "darwin" ? ["sudo"] : undefined,
+        command: this.getSudoCommand(true),
         mode: AustinRuntimeSettings.getMode(),
       },
       vscode.TaskScope.Workspace,
@@ -109,7 +117,7 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
           ? `PID ${definition.pid}`
           : resolvedPath?.fsPath;
 
-        return new AustinCommandExecutor(
+        const executor = new AustinCommandExecutor(
           command,
           cwd!,
           this.output,
@@ -117,6 +125,8 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
           fileName,
           definition.pid !== undefined,
         );
+        setCurrentExecutor(executor);
+        return executor;
       })
     );
   }

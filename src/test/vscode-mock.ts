@@ -19,6 +19,16 @@ nodeModule._resolveFilename = function (request: string, ...rest: unknown[]) {
     return origResolve.call(this, request, ...rest);
 };
 
+class EventEmitter<T> {
+    private listeners: Array<(e: T) => unknown> = [];
+    event = (listener: (e: T) => unknown) => {
+        this.listeners.push(listener);
+        return { dispose: () => { this.listeners = this.listeners.filter(l => l !== listener); } };
+    };
+    fire(data: T) { this.listeners.forEach(l => l(data)); }
+    dispose() { this.listeners = []; }
+}
+
 const mock = {
     workspace: {
         workspaceFolders: undefined as undefined,
@@ -26,14 +36,17 @@ const mock = {
             get: (_key: string, defaultValue: unknown) => defaultValue,
             update: () => undefined,
         }),
+        asRelativePath: (p: string) => p,
     },
     window: {
         showErrorMessage: () => undefined,
+        showWarningMessage: () => undefined,
         showInformationMessage: () => undefined,
         showInputBox: () => Promise.resolve(undefined),
         showQuickPick: () => Promise.resolve(undefined),
         get activeTextEditor() { return undefined; },
         createTextEditorDecorationType: () => ({ dispose: () => undefined }),
+        createTerminal: () => ({ show: () => undefined, sendText: () => undefined }),
     },
     commands: {
         executeCommand: () => Promise.resolve(undefined),
@@ -43,6 +56,7 @@ const mock = {
             fsPath: [base.fsPath, ...parts].join('/'),
         }),
     },
+    EventEmitter,
     Range: class Range {
         constructor(public start: unknown, public end: unknown) {}
     },

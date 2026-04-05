@@ -8,6 +8,7 @@ import { CallStackViewProvider } from './providers/callstack';
 import { AustinProfileTaskProvider } from './providers/task';
 import { AustinRuntimeSettings } from './settings';
 import { AustinMode } from './types';
+import { onAustinTerminated, getCurrentExecutor } from './providers/executor';
 import { AUSTIN_MIN_MAJOR, AustinVersionError, checkAustinVersion } from './utils/versionCheck';
 import { AustinMcpServer } from './providers/mcp';
 import { updateMcpJsonIfPresent, writeMcpJson } from './utils/mcpJson';
@@ -145,9 +146,17 @@ export async function activate(context: vscode.ExtensionContext) {
 	detachStatusBarItem.tooltip = "Stop Austin";
 	detachStatusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
 
+	// Note: We don't use controller.detach() which would call task.terminate().
+	// Instead, we call requestDetach() directly on the executor to attempt killing
+	// the austin process. The task only ends when the process actually exits
+	// (via onAustinTerminated event). This allows the user to retry detaching
+	// if the first attempt fails (e.g., wrong password in askpass).
 	context.subscriptions.push(
 		vscode.commands.registerCommand('austin-vscode.detach', () => {
-			controller.detach();
+			const executor = getCurrentExecutor();
+			if (executor) {
+				executor.requestDetach();
+			}
 		})
 	);
 
@@ -191,15 +200,20 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.tasks.onDidEndTask((e) => {
 			if (e.execution.task.definition.type === "austin") {
 				controller.clearCurrentExecution(e.execution);
-				detachStatusBarItem.hide();
-				pauseStatusBarItem.hide();
-				stats.paused = false;
-				pauseStatusBarItem.text = "$(debug-pause) Pause";
-				pauseStatusBarItem.tooltip = "Pause UI refreshes (data collection continues)";
-				flameGraphViewProvider.showOpenButton();
-				topProvider.hideLive();
-				callStackProvider.hideLive();
 			}
+		})
+	);
+
+	context.subscriptions.push(
+		onAustinTerminated.event(() => {
+			detachStatusBarItem.hide();
+			pauseStatusBarItem.hide();
+			stats.paused = false;
+			pauseStatusBarItem.text = "$(debug-pause) Pause";
+			pauseStatusBarItem.tooltip = "Pause UI refreshes (data collection continues)";
+			flameGraphViewProvider.showOpenButton();
+			topProvider.hideLive();
+			callStackProvider.hideLive();
 		})
 	);
 
