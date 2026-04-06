@@ -149,7 +149,7 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
             vscode.Uri.joinPath(this._extensionUri, 'media', 'callstack.js')
         );
         const codiconsUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css')
+            vscode.Uri.joinPath(this._extensionUri, 'media', 'codicons', 'codicon.css')
         );
 
         return `<!DOCTYPE html>

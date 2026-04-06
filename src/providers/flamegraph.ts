@@ -336,7 +336,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         const webview = this._view.webview;
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
         const austinLogoUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.svg'));
-        const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css'));
+        const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'codicons', 'codicon.css'));
         const modKey = process.platform === 'darwin' ? 'Cmd' : 'Ctrl';
 
         webview.html = `<!DOCTYPE html>
