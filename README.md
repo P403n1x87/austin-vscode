@@ -157,41 +157,33 @@ available to collect.
 
 ## AI Chat Integration (MCP)
 
-The extension exposes profiling data to AI chat sessions via an
-[MCP](https://modelcontextprotocol.io/) server. The server starts lazily the
-first time profiling data becomes available, and stops when the extension
-deactivates.
+The extension exposes profiling data to AI chat sessions via an MCP server that
+starts automatically when the extension activates. The following tools are
+available once a profiling session has data:
 
-The server listens on port **7891** by default (configurable via
-`austin.mcpPort`; set to `0` to disable).
+| Tool | Parameters | Description |
+|---|---|---|
+| `get_top` | `limit` (optional) | Top functions sorted by own time. |
+| `get_call_stacks` | `depth` (optional, default 5) | Process→thread→function call-stack tree. |
+| `get_metadata` | — | Source file, sampling mode, interval, and total sample count. |
 
-For example, to connect Claude Code to the server, add a `.mcp.json` file to
-your project root:
+All time and memory values are expressed as a percentage of the total observed
+metric for the session.
 
-```json
-{
-    "mcpServers": {
-        "austin": {
-            "type": "http",
-            "url": "http://localhost:7891/mcp"
-        }
-    }
-}
-```
+### GitHub Copilot
 
-> [!NOTE]
-> Adjust the port in the URL if you have changed `austin.mcpPort`.
+The MCP server is registered automatically with VS Code's built-in MCP client.
+No configuration is required — the tools appear in Copilot agent mode as soon
+as the extension activates, under the names `mcp_austin_get_top`,
+`mcp_austin_get_call_stacks`, and `mcp_austin_get_metadata`.
 
-Once connected, the following tools are available in your chat session:
+### Other agents (Claude Code, Cursor, etc.)
 
-| Tool | Description |
-|---|---|
-| `get_top` | Top functions by own time. Accepts an optional `limit`. |
-| `get_call_stacks` | Process→thread→function call-stack tree. Accepts an optional `depth` (default: 5). |
-| `get_metadata` | Profiling session metadata: source file, mode, interval, sample count. |
-
-Percentage values are relative to the total observed metric (CPU time, wall
-time, or memory, depending on the profiling mode).
+Run the **Austin: Generate .mcp.json** command from the Command Palette to
+write a `.mcp.json` file to your workspace root. This file points the agent's
+MCP client at the local server. You only need to do this once: if a `.mcp.json`
+with an austin entry already exists, the extension updates the port
+automatically on every restart.
 
 
 ## Configuration
