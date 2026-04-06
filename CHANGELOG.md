@@ -1,5 +1,12 @@
 # Change Log
 
+## [1.1.1]
+
+- Reduced the package size by omitting unnecessary multimedia assets from the
+  extension bundle.
+
+- Fixed the welcome screen in the Flame Graph panel to properly display icons.
+
 ## [1.1.0]
 
 - Added AI chat integration via MCP: profiling data is exposed to AI agents
