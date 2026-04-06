@@ -100,11 +100,6 @@ export class AustinController {
         this._currentExecution = await vscode.tasks.executeTask(task);
     }
 
-    public detach() {
-        this._currentExecution?.terminate();
-        this._currentExecution = undefined;
-    }
-
     public clearCurrentExecution(execution: vscode.TaskExecution) {
         if (this._currentExecution === execution) {
             this._currentExecution = undefined;

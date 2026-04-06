@@ -230,7 +230,8 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run esbuild-base -- --minify",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && npm run copy-askpass",
+    "copy-askpass": "node -e \"const fs=require('fs');const p=require('path');const src='src/askpass',dst='out/askpass';if(fs.existsSync(src)){if(!fs.existsSync(dst))fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).forEach(f=>{const srcPath=p.join(src,f),dstPath=p.join(dst,f);fs.copyFileSync(srcPath,dstPath);fs.chmodSync(dstPath,0o755)})}\"",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",

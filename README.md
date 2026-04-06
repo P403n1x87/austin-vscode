@@ -18,6 +18,12 @@ instructions for your platform. If you want to compile from sources or use one
 of the available release binaries, you can specify the absolute location of the
 Austin binary in the settings.
 
+> [!WARNING]
+> On macOS and Linux, this extension may prompt you for your administrator
+> password when starting or stopping a profiling session. This is because
+> Austin requires elevated privileges to profile processes. You can avoid
+> password prompts by adding Austin to your sudoers file (see below).
+
 
 ## Usage
 
@@ -31,11 +37,11 @@ task, or a one-off execution.
 > the binary, e.g. `/home/user/project/.venv/bin/austin`.
 
 > [!NOTE]
-> MacOS users should consider adding a rule for Austin to their
-> `sudoers` file. This will allow you to run `sudo austin ...` without having to
-> type your user password. This is required if you want to run Austin through
-> the extension tasks. To add a rule for Austin to the `sudoers` file, run `sudo
-> visudo` and add
+> macOS and Linux users should add Austin to their `sudoers` file to avoid
+> password prompts when starting the profiler. However, stopping the profiler
+> (detaching from a process) may still require your password unless you also add
+> `kill` to the sudoers. To add Austin to the `sudoers` file, run `sudo visudo`
+> and add
 > ~~~
 > <USER>        ALL = (root) NOPASSWD: <PATH_TO_AUSTIN>
 > ~~~
@@ -45,6 +51,12 @@ task, or a one-off execution.
 > ~~~
 > <USER>        ALL = (root) NOPASSWD:SETENV: <PATH_TO_AUSTIN>
 > ~~~
+>
+> If you prefer not to add Austin to sudoers, you can install an askpass helper:
+> - **macOS**: The extension includes a built-in askpass that will prompt for your
+>   password via a dialog.
+> - **Linux**: Install `ssh-askpass`, `ksshaskpass`, or `ksshaskpass-gnome`, or
+>   use `zenity` (`sudo apt install zenity` on Debian/Ubuntu).
 
 ### Profiling with tasks
 
