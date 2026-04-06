@@ -63,7 +63,9 @@ enum ExecutorState {
 export class AustinCommandExecutor implements vscode.Pseudoterminal {
   private austinProcess: ChildProcess | undefined;
   private state: ExecutorState = ExecutorState.Running;
-  private _hasAskpass: boolean = false;
+  // Set to true after the first attempt fails with a "no tty/no askpass" sudo
+  // error, so that the retry in open() knows to use our bundled askpass.
+  private _triedAskpass: boolean = false;
   result: number = 0;
 
   constructor(
@@ -98,14 +100,17 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
     const childEnv: DotenvPopulateInput = {};
     for (let k in env) { childEnv[k] = env[k]; }
 
-    if (this.command.cmd === 'sudo') {
+    if (this.command.cmd === 'sudo' && this._triedAskpass) {
+      // Retry: vanilla sudo failed because no system auth mechanism was available.
+      // Fall back to our bundled askpass.
       const askpass = findAskpass();
       if (askpass) {
-        this._hasAskpass = true;
         childEnv["SUDO_ASKPASS"] = askpass;
         resolvedArgs = ['-A', ...resolvedArgs];
       }
     }
+    // On first attempt: no -A, no SUDO_ASKPASS — let the system handle auth
+    // (e.g., PrivilegesCLI, sudoers-configured askpass, cached credentials).
 
     this.austinProcess = spawn(this.command.cmd, resolvedArgs, {
       cwd: this.cwd,
@@ -125,8 +130,11 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
       });
 
       // Triggered when austin writes to stderr (e.g., error messages)
+      let stderrData = '';
       this.austinProcess.stderr!.on("data", (data) => {
-        this.output.append(data.toString());
+        const s = data.toString();
+        stderrData += s;
+        this.output.append(s);
       });
 
       clearDecorations();
@@ -154,6 +162,17 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
         const wasStopping = this.state === ExecutorState.Stopping;
         this.state = ExecutorState.Terminated;
         clearInterval(refreshInterval);
+
+        // If vanilla sudo failed because no password mechanism was available,
+        // retry once with our bundled askpass before reporting an error.
+        if (!wasStopping && code !== 0 && !this._triedAskpass &&
+            this.command.cmd === 'sudo' && sudoNeedsAskpass(stderrData)) {
+          this._triedAskpass = true;
+          this.state = ExecutorState.Running;
+          this.open(undefined);
+          return;
+        }
+
         onAustinTerminated.fire(true);
         if (wasStopping) {
           // Intentional stop: we sent a kill signal before the process exited
@@ -172,16 +191,7 @@ export class AustinCommandExecutor implements vscode.Pseudoterminal {
           this.writeEmitter.fire(`austin process exited with code ${code}\r\n`);
           this.result = code!;
           this.closeEmitter.fire(code!);
-          if (this.command.cmd === 'sudo' && !this._hasAskpass) {
-            const instructions = process.platform === 'darwin'
-              ? 'Run the following in Terminal to add Austin to sudoers without a password:\necho "username ALL=(ALL) NOPASSWD: /path/to/austin" | sudo tee /etc/sudoers.d/austin'
-              : process.platform === 'linux'
-                ? 'Install an askpass helper (e.g., ssh-askpass or zenity) or add Austin to sudoers without a password.'
-                : 'Add Austin to sudoers without a password.';
-            vscode.window.showErrorMessage(`Failed to start Austin. ${instructions}`);
-          } else {
-            vscode.window.showErrorMessage(`Austin exited with code ${code}. Check the Austin output channel for details.`);
-          }
+          vscode.window.showErrorMessage(`Austin exited with code ${code}. Check the Austin output channel for details.`);
           parser.finalize();
           this.stats.notifyError();
         } else {
@@ -297,39 +307,78 @@ export function findAskpass(): string | undefined {
   return undefined;
 }
 
+/** Returns true when sudo stderr indicates it had no way to prompt for a password. */
+function sudoNeedsAskpass(stderr: string): boolean {
+  return stderr.includes('no tty present') ||
+    stderr.includes('no askpass program') ||
+    stderr.includes('a terminal is required') ||
+    stderr.includes('must be run from a terminal');
+}
+
 function attemptSudoKill(pid: number, cwd: string, onFailure?: () => void) {
-  const askpass = findAskpass();
   const env: NodeJS.ProcessEnv = {};
   for (const k of Object.keys(process.env)) { env[k] = process.env[k]; }
 
-  if (askpass) {
-    env['SUDO_ASKPASS'] = askpass;
-    const sudoArgs = ['-A', 'kill', '-TERM', String(pid)];
-    const child = spawn('sudo', sudoArgs, { env, cwd, stdio: 'ignore' });
-    child.on('close', (code) => {
-      if (code !== 0) {
-        vscode.window.showWarningMessage(
-          'Failed to stop Austin (authentication failed or was cancelled). Click "Stop Austin" to try again.'
-        );
-        if (onFailure) { onFailure(); }
+  // First try vanilla sudo — respects cached credentials and any system-level
+  // auth mechanism (e.g., PrivilegesCLI, sudoers-configured password helper).
+  let stderrData = '';
+  const child = spawn('sudo', ['kill', '-TERM', String(pid)], {
+    env, cwd, stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  child.stderr!.on('data', (d: Buffer) => { stderrData += d.toString(); });
+
+  child.on('close', (code) => {
+    if (code === 0) { return; }
+
+    if (sudoNeedsAskpass(stderrData)) {
+      // No system auth mechanism; retry with our bundled password helper.
+      const askpass = findAskpass();
+      if (askpass) {
+        const retryEnv = { ...env };
+        retryEnv['SUDO_ASKPASS'] = askpass;
+        const retry = spawn('sudo', ['-A', 'kill', '-TERM', String(pid)], {
+          env: retryEnv, cwd, stdio: 'ignore',
+        });
+        retry.on('close', (retryCode) => {
+          if (retryCode !== 0) {
+            vscode.window.showWarningMessage(
+              'Failed to stop Austin (authentication failed or was cancelled). Click "Stop Austin" to try again.'
+            );
+            if (onFailure) { onFailure(); }
+          }
+        });
+        retry.on('error', () => {
+          vscode.window.showWarningMessage(
+            'Failed to stop Austin (sudo not available). Add Austin to the sudoers file.'
+          );
+          if (onFailure) { onFailure(); }
+        });
+        return;
       }
-    });
-    child.on('error', () => {
+
+      // No password helper available — open a minimal terminal for manual auth.
+      vscode.window.showWarningMessage('Elevated privileges required to stop Austin. Check the terminal.');
+      const shellEnv: NodeJS.ProcessEnv = {};
+      for (const key of ['PATH', 'HOME', 'USER', 'SHELL', 'TERM', 'LANG', 'LC_ALL']) {
+        if (process.env[key] !== undefined) { shellEnv[key] = process.env[key]; }
+      }
+      const terminal = vscode.window.createTerminal({ cwd, env: shellEnv });
+      terminal.show();
+      terminal.sendText(`sudo kill -TERM ${pid}`);
+      if (onFailure) { onFailure(); }
+    } else {
+      // Vanilla sudo ran but authentication failed or was cancelled.
       vscode.window.showWarningMessage(
-        'Failed to stop Austin (sudo not available). Add Austin to sudoers or install a sudo password helper.'
+        'Failed to stop Austin (authentication failed or was cancelled). Click "Stop Austin" to try again.'
       );
       if (onFailure) { onFailure(); }
-    });
-  } else {
-    // No askpass available - open a minimal terminal for the user to authenticate manually.
-    vscode.window.showWarningMessage('Elevated privileges required to stop Austin. Check the terminal.');
-    const shellEnv: NodeJS.ProcessEnv = {};
-    for (const key of ['PATH', 'HOME', 'USER', 'SHELL', 'TERM', 'LANG', 'LC_ALL']) {
-      if (process.env[key] !== undefined) { shellEnv[key] = process.env[key]; }
     }
-    const terminal = vscode.window.createTerminal({ cwd, env: shellEnv });
-    terminal.show();
-    terminal.sendText(`sudo kill -TERM ${pid}`);
+  });
+
+  child.on('error', () => {
+    vscode.window.showWarningMessage(
+      'Failed to stop Austin (sudo not available). Add Austin to the sudoers file.'
+    );
     if (onFailure) { onFailure(); }
-  }
+  });
 }
