@@ -61,6 +61,16 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 return;
             }
 
+            if (data === "attach") {
+                vscode.commands.executeCommand('austin-vscode.attach');
+                return;
+            }
+
+            if (data === "run") {
+                vscode.commands.executeCommand('austin-vscode.profile');
+                return;
+            }
+
             if (data === "detach") {
                 vscode.commands.executeCommand('austin-vscode.detach');
                 return;
@@ -326,23 +336,53 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         const webview = this._view.webview;
         const austinCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.css'));
         const austinLogoUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'austin.svg'));
+        const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css'));
+        const modKey = process.platform === 'darwin' ? 'Cmd' : 'Ctrl';
 
         webview.html = `<!DOCTYPE html>
 			<html lang="en">
             <head>
+                <link rel="stylesheet" type="text/css" href="${codiconsUri}">
                 <link rel="stylesheet" type="text/css" href="${austinCssUri}">
             </head>
             <body>
-                <div class="box">
-                    <div><img src="${austinLogoUri}" alt="Austin logo" width="192px" /></div>
-                    <div class="center"><button onclick="onOpen()">OPEN</button></div>
+                <div class="welcome">
+                    <div class="welcome-left">
+                        <img src="${austinLogoUri}" alt="Austin logo" width="192px" />
+                    </div>
+                    <div class="welcome-right">
+                        <div class="welcome-title">Austin VS Code</div>
+                        <div class="welcome-links">
+                            <div class="welcome-item" onclick="onOpen()">
+                                <span class="codicon codicon-folder-opened welcome-icon"></span>
+                                <span class="welcome-link">Open</span> an existing profile
+                                <span class="welcome-key"><kbd>${modKey}</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd></span>
+                            </div>
+                            <div class="welcome-item" onclick="onAttach()">
+                                <span class="codicon codicon-plug welcome-icon"></span>
+                                <span class="welcome-link">Attach</span> to a running process
+                                <span class="welcome-key"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F5</kbd></span>
+                            </div>
+                            <div class="welcome-item" onclick="onRun()">
+                                <span class="codicon codicon-play welcome-icon"></span>
+                                <span class="welcome-link">Run</span> the current script
+                                <span class="welcome-key"><kbd>Shift</kbd>+<kbd>F5</kbd></span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <script>
                 const vscode = acquireVsCodeApi();
 
                 function onOpen() {
-                    vscode.postMessage("open");;
+                    vscode.postMessage("open");
+                }
+                function onAttach() {
+                    vscode.postMessage("attach");
+                }
+                function onRun() {
+                    vscode.postMessage("run");
                 }
                 </script>
             </body>

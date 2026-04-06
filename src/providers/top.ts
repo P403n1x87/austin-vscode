@@ -60,6 +60,10 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
                 vscode.commands.executeCommand('austin-vscode.load');
                 return;
             }
+            if (data === 'attach') {
+                vscode.commands.executeCommand('austin-vscode.attach');
+                return;
+            }
             if (data.module !== undefined) {
                 vscode.commands.executeCommand('austin-vscode.openSourceAtLine', data.module, data.line || 0);
             }
@@ -156,12 +160,16 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
         const scriptUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this._extensionUri, 'media', 'top.js')
         );
+        const codiconsUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css')
+        );
 
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" type="text/css" href="${codiconsUri}">
     <style>
         * { box-sizing: border-box; }
         body {
@@ -364,8 +372,7 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
             font-style: italic;
         }
         .open-btn {
-            display: block;
-            margin: 10px auto 0;
+            display: inline-block;
             padding: 4px 14px;
             background: var(--vscode-button-background);
             color: var(--vscode-button-foreground);
@@ -377,6 +384,13 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
             letter-spacing: 0.06em;
         }
         .open-btn:hover { background: var(--vscode-button-hoverBackground); }
+        .empty-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 10px;
+            gap: 4px;
+        }
         #loading {
             display: none;
             position: fixed;
@@ -421,7 +435,10 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
     </div>
     <div id="empty" class="empty">
         <div>No profiling data loaded.</div>
-        <button class="open-btn" id="open-btn">OPEN</button>
+        <div class="empty-actions">
+            <button class="open-btn" id="open-btn">OPEN</button>
+            <button class="open-btn" id="attach-btn">ATTACH</button>
+        </div>
     </div>
     <table id="table" style="display:none">
         <colgroup>
