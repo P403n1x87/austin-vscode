@@ -129,7 +129,12 @@
     "commands": [
       {
         "command": "austin-vscode.profile",
-        "title": "Profile with Austin"
+        "title": "Profile with Austin",
+        "category": "Austin",
+        "icon": {
+          "light": "media/austin-activitybar.svg",
+          "dark": "media/austin-activitybar-dark.svg"
+        }
       },
       {
         "command": "austin-vscode.attach",
@@ -157,6 +162,15 @@
         "category": "Austin"
       }
     ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "austin-vscode.profile",
+          "when": "resourceLangId == python",
+          "group": "navigation"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "austin-vscode.load",
