@@ -215,6 +215,7 @@ export class AustinMcpServer {
             }))
             .sort((a, b) => b.ownPct - a.ownPct);
 
+        // eslint-disable-next-line eqeqeq
         const result = limit != null && limit > 0 ? entries.slice(0, limit) : entries;
         return [{ type: 'text', text: JSON.stringify(result, null, 2) }];
     }

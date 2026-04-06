@@ -7,7 +7,6 @@
  * `import * as vscode from 'vscode'`.
  */
 
-/* eslint-disable @typescript-eslint/naming-convention */
 const nodeModule = require('module') as { _resolveFilename: (request: string, ...rest: unknown[]) => string };
 
 // Redirect any `require('vscode')` call to this file so that the exports
@@ -58,10 +57,10 @@ const mock = {
     },
     EventEmitter,
     Range: class Range {
-        constructor(public start: unknown, public end: unknown) {}
+        constructor(public start: unknown, public end: unknown) { }
     },
     Position: class Position {
-        constructor(public line: number, public character: number) {}
+        constructor(public line: number, public character: number) { }
     },
     OverviewRulerLane: { Left: 1, Center: 2, Right: 4, Full: 7 },
 };

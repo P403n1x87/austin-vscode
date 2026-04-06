@@ -195,7 +195,6 @@ suite('computeGutterMetrics', () => {
 //                New decorations are applied before old ones disappear.
 // ---------------------------------------------------------------------------
 suite('setLinesHeat — dispose ordering', () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const vscodeWindow = (require('vscode') as { window: Record<string, unknown> }).window;
 
     let events: string[] = [];

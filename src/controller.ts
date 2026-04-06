@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
-import { clearDecorations, setLinesHeat } from './view';
 import { absolutePath, AustinStats } from './model';
-import { isPythonExtensionAvailable } from './utils/pythonExtension';
 import { AustinProfileTaskProvider } from './providers/task';
 import { AustinRuntimeSettings } from './settings';
+import { isPythonExtensionAvailable } from './utils/pythonExtension';
 import { AustinVersionError, checkAustinVersion } from './utils/versionCheck';
+import { clearDecorations, setLinesHeat } from './view';
 import psList = require('ps-list');
 
 
@@ -116,9 +116,7 @@ export class AustinController {
             "canSelectMany": false,
             "title": "Pick an Austin samples file",
             "filters": {
-                // eslint-disable-next-line @typescript-eslint/naming-convention
                 "Austin files": ["austin", "aprof", "mojo"],
-                // eslint-disable-next-line @typescript-eslint/naming-convention
                 "All files": ["*"]
             }
         }).then((uris) => {
