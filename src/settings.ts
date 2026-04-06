@@ -5,7 +5,6 @@ export const DEFAULT_PATH = "austin";
 export const DEFAULT_INTERVAL = 100;
 export const DEFAULT_MODE = AustinMode.WallTime;
 export const DEFAULT_LINE_STATS = AustinLineStats.PERCENT;
-export const DEFAULT_MCP_PORT = 7891;
 
 export class AustinRuntimeSettings {
     private static config = vscode.workspace.getConfiguration('austin');
@@ -78,7 +77,4 @@ export class AustinRuntimeSettings {
         AustinRuntimeSettings.config.update("children", children, vscode.ConfigurationTarget.Global);
     }
 
-    public static getMcpPort(): number {
-        return AustinRuntimeSettings.config.get<number>("mcpPort", DEFAULT_MCP_PORT);
-    }
 }

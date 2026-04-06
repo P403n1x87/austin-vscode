@@ -10,21 +10,33 @@ import { AustinRuntimeSettings } from './settings';
 import { AustinMode } from './types';
 import { AUSTIN_MIN_MAJOR, AustinVersionError, checkAustinVersion } from './utils/versionCheck';
 import { AustinMcpServer } from './providers/mcp';
+import { updateMcpJsonIfPresent, writeMcpJson } from './utils/mcpJson';
 
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
 	vscode.workspace.onDidChangeTextDocument((_changeEvent) => {
 		clearDecorations();
 	});
 
 	const stats = new AustinStats();
 
-	const mcpPort = AustinRuntimeSettings.getMcpPort();
-	if (mcpPort > 0) {
-		const mcpServer = new AustinMcpServer(mcpPort);
-		stats.registerAfterCallback((s) => mcpServer.update(s));
-		context.subscriptions.push({ dispose: () => mcpServer.dispose() });
-	}
+	const mcpServer = new AustinMcpServer();
+	await mcpServer.start();
+	stats.registerAfterCallback((s) => mcpServer.update(s));
+	const mcpNeverChange = new vscode.EventEmitter<void>();
+	context.subscriptions.push(
+		mcpNeverChange,
+		{ dispose: () => mcpServer.dispose() },
+		vscode.lm.registerMcpServerDefinitionProvider('austin', {
+			onDidChangeMcpServerDefinitions: mcpNeverChange.event,
+			provideMcpServerDefinitions() {
+				return [new vscode.McpHttpServerDefinition(
+					'Austin',
+					vscode.Uri.parse(`http://127.0.0.1:${mcpServer.port}/mcp`),
+				)];
+			},
+		})
+	);
 
 	context.subscriptions.push(
 		vscode.window.onDidChangeActiveTextEditor((editor) => {
@@ -36,7 +48,10 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+	updateMcpJsonIfPresent(mcpServer.port);
+
 	const output = vscode.window.createOutputChannel("Austin");
+	output.appendLine(`Austin MCP server listening on http://127.0.0.1:${mcpServer.port}/mcp`);
 
 	const austinProfileProvider = new AustinProfileTaskProvider(stats, output);
 	const controller = new AustinController(stats, austinProfileProvider, output);
@@ -99,6 +114,22 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('austin-vscode.load', () => {
 			controller.openSampleFile();
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('austin-vscode.generateMcpJson', async () => {
+			const folders = vscode.workspace.workspaceFolders;
+			if (!folders || folders.length === 0) {
+				vscode.window.showErrorMessage('Austin: no workspace folder is open.');
+				return;
+			}
+			const folder = folders.length === 1
+				? folders[0]
+				: await vscode.window.showWorkspaceFolderPick({ placeHolder: 'Select workspace folder for .mcp.json' });
+			if (!folder) { return; }
+			writeMcpJson(folder, mcpServer.port);
+			vscode.window.showInformationMessage(`Austin: .mcp.json written to ${folder.uri.fsPath}`);
 		})
 	);
 

@@ -1,5 +1,18 @@
 # Change Log
 
+## [1.1.0]
+
+- Added AI chat integration via MCP: profiling data is exposed to AI agents
+  (e.g. GitHub Copilot, Claude Code, Cursor) through three tools — `get_top`,
+  `get_call_stacks`, and `get_metadata`. The server starts automatically when
+  the extension activates and binds to an OS-assigned port, so multiple VS Code
+  windows can run simultaneously without conflicts.
+
+- Added the **Austin: Generate .mcp.json** command, which writes a `.mcp.json`
+  file to the workspace root for agents with their own MCP client. If the file
+  already has an austin entry, the port is updated automatically on every
+  restart.
+
 ## [1.0.0]
 
 ### Flame Graph
@@ -36,15 +49,6 @@
   call path; a "Sync with flame graph" toggle controls this behavior.
 
 - Both panels show a sortable **Own** and **Total** column.
-
-### AI Chat Integration
-
-- Added an MCP server that exposes profiling data to AI chat sessions (e.g.
-  Claude Code). The server starts lazily when the first profiling data becomes
-  available and listens on port 7891 by default (configurable via
-  `austin.mcpPort`; set to `0` to disable). Three tools are provided:
-  `get_top`, `get_call_stacks`, and `get_metadata`. See the README for setup
-  instructions.
 
 ### Other Improvements
 

@@ -1,5 +1,4 @@
 import * as http from 'http';
-import * as vscode from 'vscode';
 import { AustinStats, TopStats } from '../model';
 
 const MCP_PROTOCOL_VERSION = '2024-11-05';
@@ -79,20 +78,28 @@ export class AustinMcpServer {
     private _httpServer: http.Server | null = null;
     private _stats: AustinStats | null = null;
 
-    constructor(private readonly _port: number) { }
-
-    /**
-     * Called on every stats refresh. Starts the HTTP server lazily on the
-     * first call so that the server only runs when profiling data exists.
-     */
-    update(stats: AustinStats): void {
-        this._stats = stats;
-        if (!this._httpServer) {
-            this._startServer();
-        }
+    /** Starts the server on an OS-assigned port. Resolves once the port is known. */
+    start(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const server = http.createServer((req, res) => this._handleRequest(req, res));
+            server.on('error', reject);
+            server.listen(0, '127.0.0.1', () => {
+                server.removeListener('error', reject);
+                server.on('error', (err: NodeJS.ErrnoException) => {
+                    console.error(`Austin MCP server error: ${err.message}`);
+                });
+                resolve();
+            });
+            this._httpServer = server;
+        });
     }
 
-    /** Returns the port the server is actually listening on (0 until started). */
+    /** Updates the stats served by this server. Called on every profiling refresh. */
+    update(stats: AustinStats): void {
+        this._stats = stats;
+    }
+
+    /** Returns the port the server is listening on. */
     get port(): number {
         const addr = this._httpServer?.address();
         if (addr && typeof addr === 'object') { return addr.port; }
@@ -103,29 +110,6 @@ export class AustinMcpServer {
         this._httpServer?.close();
         this._httpServer = null;
         this._stats = null;
-    }
-
-    // -----------------------------------------------------------------------
-    // Private
-    // -----------------------------------------------------------------------
-
-    private _startServer(): void {
-        const server = http.createServer((req, res) => this._handleRequest(req, res));
-
-        server.on('error', (err: NodeJS.ErrnoException) => {
-            if (err.code === 'EADDRINUSE') {
-                vscode.window.showWarningMessage(
-                    `Austin MCP server could not start: port ${this._port} is already in use. ` +
-                    `Change the austin.mcpPort setting to use a different port.`
-                );
-            } else {
-                vscode.window.showWarningMessage(`Austin MCP server error: ${err.message}`);
-            }
-            this._httpServer = null;
-        });
-
-        server.listen(this._port);
-        this._httpServer = server;
     }
 
     private _handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {

@@ -5,7 +5,7 @@
   "description": "Austin extension for VS Code",
   "version": "0.0.0",
   "engines": {
-    "vscode": "^1.57.0"
+    "vscode": "^1.101.0"
   },
   "repository": {
     "type": "github",
@@ -28,12 +28,7 @@
     "ps-list": "^7.2.0"
   },
   "activationEvents": [
-    "onCommand:austin-vscode.profile",
-    "onCommand:austin-vscode.attach",
-    "onCommand:austin-vscode.load",
-    "onStartupFinished",
-    "onView:austin-vscode.flame-graph",
-    "onView:austin-vscode.austin-stats"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -82,14 +77,15 @@
             "Both percent and absolute metric values"
           ],
           "default": "Percent"
-        },
-        "austin.mcpPort": {
-          "description": "Port for the Austin MCP server, which exposes profiling data to AI chat sessions (e.g. Claude Code). The server starts lazily when the first profiling data becomes available. Set to 0 to disable.",
-          "type": "number",
-          "default": 7891
         }
       }
     },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "austin",
+        "label": "Austin"
+      }
+    ],
     "viewsContainers": {
       "panel": [
         {
@@ -154,6 +150,11 @@
       {
         "command": "austin-vscode.toggleChildren",
         "title": "Toggle Austin Children Profiling"
+      },
+      {
+        "command": "austin-vscode.generateMcpJson",
+        "title": "Generate .mcp.json",
+        "category": "Austin"
       }
     ],
     "keybindings": [
@@ -244,7 +245,7 @@
     "@types/glob": "^7.1.3",
     "@types/mocha": "^8.0.4",
     "@types/node": "^12.11.7",
-    "@types/vscode": "^1.57.0",
+    "@types/vscode": "^1.101.0",
     "@typescript-eslint/eslint-plugin": "^8.57.2",
     "@typescript-eslint/parser": "^8.57.2",
     "@vscode/test-electron": "^2.3.8",

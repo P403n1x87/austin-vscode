@@ -42,8 +42,9 @@ function makeStats(lines: string): Promise<AustinStats> {
     });
 }
 
-function startedServer(stats: AustinStats): AustinMcpServer {
-    const server = new AustinMcpServer(0); // port 0 = OS-assigned
+async function startedServer(stats: AustinStats): Promise<AustinMcpServer> {
+    const server = new AustinMcpServer();
+    await server.start();
     server.update(stats);
     return server;
 }
@@ -63,20 +64,20 @@ suite('AustinMcpServer', () => {
 
     // --- Lifecycle ----------------------------------------------------------
 
-    test('server does not start before update() is called', () => {
-        server = new AustinMcpServer(0);
+    test('port is 0 before start() is called', () => {
+        server = new AustinMcpServer();
         assert.strictEqual(server.port, 0);
     });
 
-    test('server starts lazily on first update() call', async () => {
-        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
-        server = startedServer(stats);
-        assert.ok(server.port > 0, 'port should be assigned after update()');
+    test('start() assigns a non-zero port', async () => {
+        server = new AustinMcpServer();
+        await server.start();
+        assert.ok(server.port > 0, 'port should be assigned after start()');
     });
 
     test('dispose() stops the server', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const port = server.port;
         server.dispose();
         server = null;
@@ -92,7 +93,7 @@ suite('AustinMcpServer', () => {
 
     test('initialize returns server info and capabilities', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, {
             jsonrpc: '2.0', method: 'initialize', id: 1,
             params: { protocolVersion: '2024-11-05', clientInfo: { name: 'test', version: '0' }, capabilities: {} },
@@ -107,21 +108,21 @@ suite('AustinMcpServer', () => {
 
     test('ping returns empty result', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, { jsonrpc: '2.0', method: 'ping', id: 2 }) as Record<string, unknown>;
         assert.deepStrictEqual(res.result, {});
     });
 
     test('notifications/initialized returns 202 (no body)', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, { jsonrpc: '2.0', method: 'notifications/initialized' });
         assert.strictEqual(res, null);
     });
 
     test('tools/list returns all three tools', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, { jsonrpc: '2.0', method: 'tools/list', id: 3 }) as Record<string, unknown>;
         const tools = (res.result as Record<string, unknown>).tools as Array<{ name: string }>;
         const names = tools.map(t => t.name);
@@ -132,19 +133,21 @@ suite('AustinMcpServer', () => {
 
     test('unknown method returns error -32601', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, { jsonrpc: '2.0', method: 'nonexistent', id: 4 }) as Record<string, unknown>;
         assert.strictEqual((res.error as Record<string, unknown>).code, -32601);
     });
 
-    test('malformed JSON returns 400', (done) => {
-        makeStats('P1;T1;/a.py:fn:1 100\n').then((stats) => {
-            server = startedServer(stats);
+    test('malformed JSON returns 400', async () => {
+        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
+        server = await startedServer(stats);
+        await new Promise<void>((resolve, reject) => {
             const req = http.request(
                 { hostname: '127.0.0.1', port: server!.port, path: '/mcp', method: 'POST',
                   headers: { 'Content-Type': 'application/json' } },
-                (res) => { assert.strictEqual(res.statusCode, 400); done(); }
+                (res) => { assert.strictEqual(res.statusCode, 400); resolve(); }
             );
+            req.on('error', reject);
             req.end('{bad json');
         });
     });
@@ -156,7 +159,7 @@ suite('AustinMcpServer', () => {
             'P1;T1;/a.py:outer:1;/a.py:inner:2 100\n' +
             'P1;T1;/a.py:outer:1 50\n'
         );
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, {
             jsonrpc: '2.0', method: 'tools/call', id: 5,
             params: { name: 'get_top', arguments: {} },
@@ -174,7 +177,7 @@ suite('AustinMcpServer', () => {
             'P1;T1;/a.py:f2:2 80\n' +
             'P1;T1;/a.py:f3:3 60\n'
         );
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, {
             jsonrpc: '2.0', method: 'tools/call', id: 6,
             params: { name: 'get_top', arguments: { limit: 2 } },
@@ -187,7 +190,7 @@ suite('AustinMcpServer', () => {
 
     test('get_top includes ownPct, totalPct, scope, module, line fields', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:5 200\n');
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, {
             jsonrpc: '2.0', method: 'tools/call', id: 7,
             params: { name: 'get_top', arguments: {} },
@@ -207,7 +210,7 @@ suite('AustinMcpServer', () => {
 
     test('get_call_stacks returns process/thread/function tree', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, {
             jsonrpc: '2.0', method: 'tools/call', id: 8,
             params: { name: 'get_call_stacks', arguments: {} },
@@ -222,7 +225,7 @@ suite('AustinMcpServer', () => {
 
     test('get_call_stacks respects depth=1', async () => {
         const stats = await makeStats('P1;T1;/a.py:outer:1;/a.py:inner:2 100\n');
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, {
             jsonrpc: '2.0', method: 'tools/call', id: 9,
             params: { name: 'get_call_stacks', arguments: { depth: 1 } },
@@ -239,7 +242,7 @@ suite('AustinMcpServer', () => {
 
     test('get_metadata returns source and totalSamples', async () => {
         const stats = await makeStats('# mode: wall\nP1;T1;/a.py:fn:1 100\n');
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, {
             jsonrpc: '2.0', method: 'tools/call', id: 10,
             params: { name: 'get_metadata', arguments: {} },
@@ -256,7 +259,7 @@ suite('AustinMcpServer', () => {
 
     test('tools return a helpful message when no profiling data is available', async () => {
         const stats = new AustinStats(); // empty — overallTotal === 0
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, {
             jsonrpc: '2.0', method: 'tools/call', id: 11,
             params: { name: 'get_top', arguments: {} },
@@ -268,7 +271,7 @@ suite('AustinMcpServer', () => {
 
     test('unknown tool name returns a helpful message', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
-        server = startedServer(stats);
+        server = await startedServer(stats);
         const res = await post(server.port, {
             jsonrpc: '2.0', method: 'tools/call', id: 12,
             params: { name: 'does_not_exist', arguments: {} },
