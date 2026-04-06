@@ -1,5 +1,9 @@
 # Change Log
 
+## [1.1.2]
+
+- Fixed more packaging issues.
+
 ## [1.1.1]
 
 - Reduced the package size by omitting unnecessary multimedia assets from the
