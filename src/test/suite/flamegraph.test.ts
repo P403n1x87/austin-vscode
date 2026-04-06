@@ -2,7 +2,6 @@ import * as assert from 'assert';
 import * as path from 'path';
 
 // flamegraph-utils.js uses a UMD wrapper that falls back to module.exports in Node.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const utils = require(path.join(__dirname, '..', '..', '..', 'media', 'flamegraph-utils.js')) as {
     hslToHex(h: number, s: number, l: number): string;
     hash(text: string): number;
