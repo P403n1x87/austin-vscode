@@ -155,9 +155,22 @@ string. To reset the view, simply press <kbd>R</kbd>. Conveniently, you can
 bring up the open dialog with <kbd>O</kbd> while the focus is on the flame graph
 panel.
 
-The extension also adds two interactive tree views in the side bar to explore
-the sampled call stack and the top functions. Click on the Austin logo in the
-activity bar to reveal them.
+The extension also adds interactive tree views in the side bar to explore the
+sampled call stack, the top functions, and GC activity. Click on the Austin logo
+in the activity bar to reveal them.
+
+### GC Activity
+
+Enable garbage collector data collection with the **GC** toggle in the status
+bar. When GC data is present, a collapsible **GC Activity** swimlane panel
+appears above the flame graph, showing per-thread GC spans as proportional
+blocks on a timeline. Hovering a span reveals the top contributing frames;
+clicking a thread label zooms the flame graph to that thread.
+
+The **GC Top** sidebar panel lists the functions that were on the stack during
+GC collection, ranked by own GC time, with a per-thread summary at the top.
+Clicking a thread row zooms the flame graph to that thread; clicking a frame
+row opens the source file at the corresponding line.
 
 
 ### Expression-level heat maps
@@ -178,6 +191,7 @@ available once a profiling session has data:
 | `get_top` | `limit` (optional) | Top functions sorted by own time. |
 | `get_call_stacks` | `depth` (optional, default 5) | Process→thread→function call-stack tree. |
 | `get_metadata` | — | Source file, sampling mode, interval, and total sample count. |
+| `get_gc_data` | `limit` (optional) | Per-thread GC time fractions and top functions on the stack during GC, ranked by own GC time. Returns `available: false` if GC collection was not enabled for the session. |
 
 All time and memory values are expressed as a percentage of the total observed
 metric for the session.
@@ -187,7 +201,8 @@ metric for the session.
 The MCP server is registered automatically with VS Code's built-in MCP client.
 No configuration is required — the tools appear in Copilot agent mode as soon
 as the extension activates, under the names `mcp_austin_get_top`,
-`mcp_austin_get_call_stacks`, and `mcp_austin_get_metadata`.
+`mcp_austin_get_call_stacks`, `mcp_austin_get_metadata`, and
+`mcp_austin_get_gc_data`.
 
 ### Other agents (Claude Code, Cursor, etc.)
 

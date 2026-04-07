@@ -5,7 +5,7 @@
 
     // ── Utilities (loaded from flamegraph-utils.js) ───────────────────────────
     // @ts-ignore
-    const { colorFor, basename, isEmpty, footerText } = FlamegraphUtils;
+    const { colorFor, basename, isEmpty, footerText, esc } = FlamegraphUtils;
 
     /** @param {any} node @param {string} parentKey */
     function addPathKeys(node, parentKey) {
@@ -437,6 +437,137 @@
         if (modeSpan) { modeSpan.innerHTML = mode; }
     }
 
+    /** Returns the [r,g,b] triple for the current profile mode. */
+    function modeRgb() {
+        switch (currentMode) {
+            case 'wall':   return [192, 192, 64];
+            case 'memory': return [64,  192, 64];
+            default:       return [192, 64,  64];  // cpu
+        }
+    }
+
+    // ── GC Swimlanes ──────────────────────────────────────────────────────────
+
+    const gcPanel   = document.getElementById('gc-panel');
+    const gcDetails = /** @type {HTMLDetailsElement|null} */ (document.getElementById('gc-details'));
+    const gcLanes   = document.getElementById('gc-swimlanes');
+
+    const gcTooltip = (() => {
+        const el = document.createElement('div');
+        el.id = 'gc-tooltip';
+        document.body.appendChild(el);
+        return el;
+    })();
+
+    /** @param {MouseEvent} e */
+    function positionGCTooltip(e) {
+        const margin = 14;
+        const tw = gcTooltip.offsetWidth;
+        const th = gcTooltip.offsetHeight;
+        let x = e.clientX + margin;
+        let y = e.clientY + margin;
+        if (x + tw > window.innerWidth)  { x = e.clientX - tw - margin; }
+        if (y + th > window.innerHeight) { y = e.clientY - th - margin; }
+        gcTooltip.style.left = x + 'px';
+        gcTooltip.style.top  = y + 'px';
+    }
+
+    /**
+     * Walk the hierarchy to find a thread node by pid:tid key.
+     * @param {string} threadKey  "${pid}:${iid}:${tid}"
+     * @returns {any|null}
+     */
+    function findThreadNode(threadKey) {
+        if (!rootNode) { return null; }
+        const colonIdx = threadKey.indexOf(':');
+        if (colonIdx < 0) { return null; }
+        const pid = threadKey.slice(0, colonIdx);
+        const tid = threadKey.slice(colonIdx + 1);
+        for (const proc of (rootNode.children || [])) {
+            if (proc.name === `Process ${pid}`) {
+                for (const thread of (proc.children || [])) {
+                    if (thread.name === `Thread ${tid}`) { return thread; }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Render pre-computed GC spans (built by the extension backend).
+     * @param {any[]} threadSpans
+     */
+    function loadGCSpans(threadSpans) {
+        if (!gcLanes || !gcPanel) { return; }
+        gcLanes.innerHTML = '';
+
+        if (!threadSpans || threadSpans.length === 0) {
+            gcPanel.style.display = 'none';
+            return;
+        }
+
+        const [mr, mg, mb] = modeRgb();
+        const spanColor      = `rgba(${mr},${mg},${mb},0.75)`;
+        const highlightColor = `rgba(${mr},${mg},${mb},0.15)`;
+
+        for (const { label, threadKey, spans } of threadSpans) {
+            const row = document.createElement('div');
+            row.className = 'swimlane-row';
+
+            const labelEl = document.createElement('span');
+            labelEl.className = 'swimlane-label';
+            labelEl.textContent = label;
+            labelEl.title = 'Click to focus thread in flame graph';
+            labelEl.style.cursor = 'pointer';
+            labelEl.addEventListener('click', () => {
+                // Deactivate all rows, activate this one
+                gcLanes.querySelectorAll('.swimlane-row').forEach(r => {
+                    r.classList.remove('active');
+                    /** @type {HTMLElement} */ (r).style.background = '';
+                });
+                row.classList.add('active');
+                row.style.background = highlightColor;
+                const node = findThreadNode(threadKey);
+                if (node) { zoomTo(node); }
+            });
+            row.appendChild(labelEl);
+
+            const track = document.createElement('div');
+            track.className = 'swimlane-track';
+
+            for (const span of spans) {
+                const block = document.createElement('div');
+                block.className = 'swimlane-block';
+                block.style.left       = (span.startFraction * 100).toFixed(3) + '%';
+                block.style.width      = `max(2px, ${(span.durationFraction * 100).toFixed(3)}%)`;
+                block.style.background = spanColor;
+
+                block.addEventListener('mouseenter', (e) => {
+                    let html = `<div style="font-weight:600;margin-bottom:3px">${esc(label)}</div>`;
+                    html += `<div>GC span: <b>${span.durationPct}%</b> of thread time</div>`;
+                    if (span.topFrames.length > 0) {
+                        html += `<div style="margin-top:5px;opacity:0.65;font-size:10px;text-transform:uppercase;letter-spacing:0.05em">Top contributors</div>`;
+                        for (const { scope, module: mod, fraction } of span.topFrames) {
+                            html += `<div style="opacity:0.85;font-size:10px">· ${esc(scope)} <span style="opacity:0.6">(${(fraction * 100).toFixed(0)}%)</span></div>`;
+                        }
+                    }
+                    gcTooltip.innerHTML = html;
+                    gcTooltip.style.display = 'block';
+                    positionGCTooltip(/** @type {MouseEvent} */ (e));
+                });
+                block.addEventListener('mousemove', (e) => positionGCTooltip(/** @type {MouseEvent} */ (e)));
+                block.addEventListener('mouseleave', () => { gcTooltip.style.display = 'none'; });
+
+                track.appendChild(block);
+            }
+
+            row.appendChild(track);
+            gcLanes.appendChild(row);
+        }
+
+        gcPanel.style.display = gcLanes.children.length > 0 ? 'block' : 'none';
+    }
+
     // ── Messages ──────────────────────────────────────────────────────────────
 
     window.addEventListener('message', event => {
@@ -444,6 +575,9 @@
         if (msg === 'reset') {
             resetZoom();
             clearSearch();
+        } else if (msg.focusThread) {
+            const node = findThreadNode(msg.focusThread);
+            if (node) { zoomTo(node); }
         } else if (msg.focus) {
             focusByPathKey(msg.focus);
         } else if (msg.search) {
@@ -451,6 +585,7 @@
         } else if (msg.meta !== undefined) {
             setMetadata(msg.meta);
             loadData(msg.hierarchy);
+            loadGCSpans(msg.gcSpans);
             vscode.setState(msg);
         } else if (msg.hierarchy) {
             loadData(msg.hierarchy);
@@ -475,6 +610,7 @@
     if (state) {
         setMetadata(state.meta);
         loadData(state.hierarchy);
+        loadGCSpans(state.gcSpans);
     }
 
     vscode.postMessage('initialized');

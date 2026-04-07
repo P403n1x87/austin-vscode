@@ -49,6 +49,17 @@ async function startedServer(stats: AustinStats): Promise<AustinMcpServer> {
     return server;
 }
 
+/** Build stats with GC events directly (text parser strips GC frames). */
+function makeGCStats(): AustinStats {
+    const stats = new AustinStats();
+    // 300 units total: 100 non-gc, 100 gc on fn1, 100 gc on fn2
+    stats.update(1, 'T1', [{ module: '/a.py', scope: 'fn1', line: 1 }], 100, false);
+    stats.update(1, 'T1', [{ module: '/a.py', scope: 'fn1', line: 1 }], 100, true);
+    stats.update(1, 'T1', [{ module: '/b.py', scope: 'fn2', line: 1 }], 100, true);
+    stats.refresh();
+    return stats;
+}
+
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
@@ -120,7 +131,7 @@ suite('AustinMcpServer', () => {
         assert.strictEqual(res, null);
     });
 
-    test('tools/list returns all three tools', async () => {
+    test('tools/list returns all four tools', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
         server = await startedServer(stats);
         const res = await post(server.port, { jsonrpc: '2.0', method: 'tools/list', id: 3 }) as Record<string, unknown>;
@@ -129,6 +140,7 @@ suite('AustinMcpServer', () => {
         assert.ok(names.includes('get_top'));
         assert.ok(names.includes('get_call_stacks'));
         assert.ok(names.includes('get_metadata'));
+        assert.ok(names.includes('get_gc_data'));
     });
 
     test('unknown method returns error -32601', async () => {
@@ -279,5 +291,95 @@ suite('AustinMcpServer', () => {
 
         const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
         assert.ok(content[0].text.includes('Unknown tool'));
+    });
+
+    // --- get_gc_data ---------------------------------------------------------
+
+    test('get_gc_data returns available:false when no GC events exist', async () => {
+        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
+        server = await startedServer(stats);
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 13,
+            params: { name: 'get_gc_data', arguments: {} },
+        }) as Record<string, unknown>;
+
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        const data = JSON.parse(content[0].text) as Record<string, unknown>;
+        assert.strictEqual(data.available, false);
+    });
+
+    test('get_gc_data returns available:true with threads and frames when GC data present', async () => {
+        server = await startedServer(makeGCStats());
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 14,
+            params: { name: 'get_gc_data', arguments: {} },
+        }) as Record<string, unknown>;
+
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        const data = JSON.parse(content[0].text) as Record<string, unknown>;
+        assert.strictEqual(data.available, true);
+        assert.ok(Array.isArray(data.threads), 'threads should be an array');
+        assert.ok(Array.isArray(data.frames),  'frames should be an array');
+    });
+
+    test('get_gc_data threads include pid, tid, and gcPct', async () => {
+        server = await startedServer(makeGCStats());
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 15,
+            params: { name: 'get_gc_data', arguments: {} },
+        }) as Record<string, unknown>;
+
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        const { threads } = JSON.parse(content[0].text) as { threads: Array<Record<string, unknown>> };
+        assert.strictEqual(threads.length, 1);
+        assert.ok('pid'   in threads[0]);
+        assert.ok('tid'   in threads[0]);
+        assert.ok('gcPct' in threads[0]);
+        // 200 gc / 300 total ≈ 66.67%
+        assert.ok((threads[0].gcPct as number) > 60 && (threads[0].gcPct as number) < 70);
+    });
+
+    test('get_gc_data frames include scope, module, ownGcPct, totalGcPct, line', async () => {
+        server = await startedServer(makeGCStats());
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 16,
+            params: { name: 'get_gc_data', arguments: {} },
+        }) as Record<string, unknown>;
+
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        const { frames } = JSON.parse(content[0].text) as { frames: Array<Record<string, unknown>> };
+        assert.ok(frames.length > 0);
+        const frame = frames[0];
+        assert.ok('scope'      in frame);
+        assert.ok('module'     in frame);
+        assert.ok('ownGcPct'   in frame);
+        assert.ok('totalGcPct' in frame);
+        assert.ok('line'       in frame);
+    });
+
+    test('get_gc_data frames are sorted by ownGcPct descending', async () => {
+        server = await startedServer(makeGCStats());
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 17,
+            params: { name: 'get_gc_data', arguments: {} },
+        }) as Record<string, unknown>;
+
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        const { frames } = JSON.parse(content[0].text) as { frames: Array<{ ownGcPct: number }> };
+        for (let i = 1; i < frames.length; i++) {
+            assert.ok(frames[i - 1].ownGcPct >= frames[i].ownGcPct, 'frames should be sorted descending');
+        }
+    });
+
+    test('get_gc_data respects limit argument', async () => {
+        server = await startedServer(makeGCStats());
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 18,
+            params: { name: 'get_gc_data', arguments: { limit: 1 } },
+        }) as Record<string, unknown>;
+
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        const { frames } = JSON.parse(content[0].text) as { frames: unknown[] };
+        assert.strictEqual(frames.length, 1);
     });
 });

@@ -60,6 +60,14 @@ export class TopStats {
     }
 }
 
+export interface GCEvent {
+    pid: number;
+    tid: string;
+    gc: boolean;
+    metric: number;
+    frameKeys: string[];  // `${module}:${scope}` for each frame in the sample
+}
+
 export interface AustinStats {
     hierarchy: FlameNode;
     locationMap: Map<string, Map<string, [FrameObject, number, number]>>;
@@ -68,6 +76,7 @@ export interface AustinStats {
     overallTotal: number;
     source: string | null;
     metadata: Map<string, string>;
+    gcEvents: GCEvent[];
 }
 
 export class AustinStats implements AustinStats {
@@ -94,6 +103,7 @@ export class AustinStats implements AustinStats {
         this._errorCbs = [];
         this.source = null;
         this.metadata = new Map();
+        this.gcEvents = [];
     }
 
     clear() {
@@ -109,6 +119,7 @@ export class AustinStats implements AustinStats {
         };
         this.callStack = new TopStats();
         this.metadata = new Map();
+        this.gcEvents = [];
     }
 
     private updateTop(frameList: FrameObject[], metric: number) {
@@ -276,10 +287,18 @@ export class AustinStats implements AustinStats {
         this.metadata.set(key, value);
     }
 
-    public update(pid: number, tid: string, frames: FrameObject[], metric: number) {
+    public update(pid: number, tid: string, frames: FrameObject[], metric: number, gc: boolean = false) {
         if (metric > 0) {
             this.overallTotal += metric;
         }
+
+        this.gcEvents.push({
+            pid,
+            tid,
+            gc,
+            metric,
+            frameKeys: frames.map(f => `${f.module}:${f.scope}`),
+        });
 
         this.updateLineMap(frames, metric);
         this.updateTop(frames, metric);
@@ -365,7 +384,9 @@ export class AustinStats implements AustinStats {
             let frames = pidTidFrames.split(";");
             let pid = frames.shift()!.substring(1);
             let tid = frames.shift()!.substring(1);
-            this.update(Number(pid), tid, frames.map(parseFrame), Number(metric));
+            const parsedFrames = frames.map(parseFrame);
+            const gc = parsedFrames.some(f => f.module === "" && f.scope === "GC");
+            this.update(Number(pid), tid, parsedFrames.filter(f => !(f.module === "" && f.scope === "GC")), Number(metric), gc);
         });
 
         readInterface.on("close", this.finalize.bind(this));
