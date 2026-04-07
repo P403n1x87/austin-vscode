@@ -167,7 +167,7 @@
         {
           "command": "austin-vscode.profile",
           "when": "resourceLangId == python",
-          "group": "navigation"
+          "group": "navigation@3"
         }
       ]
     },
