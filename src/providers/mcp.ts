@@ -46,6 +46,20 @@ const TOOLS = [
             additionalProperties: false,
         },
     },
+    {
+        name: 'get_gc_data',
+        description: 'Returns garbage collector activity data. Includes per-thread GC time fractions and the top functions that were on the stack while the GC was running, ranked by own GC time. Returns an empty result if GC data collection was not enabled for this session (use the GC toggle in the status bar to enable it).',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                limit: {
+                    type: 'number',
+                    description: 'Maximum number of top GC frames to return. Omit for all.',
+                },
+            },
+            additionalProperties: false,
+        },
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -197,6 +211,8 @@ export class AustinMcpServer {
                 return this._getCallStacks(args.depth as number | undefined);
             case 'get_metadata':
                 return this._getMetadata();
+            case 'get_gc_data':
+                return this._getGCData(args.limit as number | undefined);
             default:
                 return [{ type: 'text', text: `Unknown tool: ${name}` }];
         }
@@ -234,6 +250,76 @@ export class AustinMcpServer {
         };
         for (const [k, v] of stats.metadata) { meta[k] = v; }
         return [{ type: 'text', text: JSON.stringify(meta, null, 2) }];
+    }
+
+    private _getGCData(limit?: number): Array<{ type: string; text: string }> {
+        const stats = this._stats!;
+
+        if (!stats.gcEvents.length) {
+            return [{ type: 'text', text: JSON.stringify({ available: false, reason: 'No GC data in this profile. Enable GC collection with the GC toggle in the status bar.' }) }];
+        }
+
+        // Accumulate per-thread and per-frame GC metrics from the event log
+        const threadMap = new Map<string, { pid: number; tid: string; gcMetric: number; totalMetric: number }>();
+        const frameOwn = new Map<string, number>();
+        const frameAll = new Map<string, number>();
+
+        for (const ev of stats.gcEvents) {
+            if (ev.metric <= 0) { continue; }
+            const threadKey = `${ev.pid}:${ev.tid}`;
+            if (!threadMap.has(threadKey)) {
+                threadMap.set(threadKey, { pid: ev.pid, tid: ev.tid, gcMetric: 0, totalMetric: 0 });
+            }
+            const thread = threadMap.get(threadKey)!;
+            thread.totalMetric += ev.metric;
+
+            if (!ev.gc) { continue; }
+            thread.gcMetric += ev.metric;
+
+            const seen = new Set<string>();
+            for (let i = 0; i < ev.frameKeys.length; i++) {
+                const key = ev.frameKeys[i];
+                if (seen.has(key)) { continue; }
+                seen.add(key);
+                frameAll.set(key, (frameAll.get(key) ?? 0) + ev.metric);
+                if (i === ev.frameKeys.length - 1) {
+                    frameOwn.set(key, (frameOwn.get(key) ?? 0) + ev.metric);
+                }
+            }
+        }
+
+        const threads = [...threadMap.values()]
+            .filter(t => t.gcMetric > 0)
+            .map(t => ({
+                pid: t.pid,
+                tid: t.tid,
+                gcPct: parseFloat((t.gcMetric / t.totalMetric * 100).toFixed(2)),
+            }))
+            .sort((a, b) => b.gcPct - a.gcPct);
+
+        if (threads.length === 0) {
+            return [{ type: 'text', text: JSON.stringify({ available: false, reason: 'GC data was collected but no GC activity was recorded.' }) }];
+        }
+
+        const denom = stats.overallTotal || 1;
+        let frames = [...frameAll.entries()]
+            .map(([key, totalMetric]) => {
+                const topStats = stats.top.get(key);
+                const lastColon = key.lastIndexOf(':');
+                return {
+                    scope:    topStats?.scope  ?? (lastColon >= 0 ? key.slice(lastColon + 1) : key),
+                    module:   topStats?.module ?? (lastColon >= 0 ? key.slice(0, lastColon)  : ''),
+                    line:     topStats?.minLine ?? 0,
+                    ownGcPct:   parseFloat(((frameOwn.get(key) ?? 0) / denom * 100).toFixed(2)),
+                    totalGcPct: parseFloat((totalMetric / denom * 100).toFixed(2)),
+                };
+            })
+            .sort((a, b) => b.ownGcPct - a.ownGcPct);
+
+        // eslint-disable-next-line eqeqeq
+        if (limit != null && limit > 0) { frames = frames.slice(0, limit); }
+
+        return [{ type: 'text', text: JSON.stringify({ available: true, threads, frames }, null, 2) }];
     }
 
     private _error(

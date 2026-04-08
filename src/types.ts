@@ -16,4 +16,5 @@ export class AustinSettings {
     interval: number = 100;
     lineStats: AustinLineStats = AustinLineStats.PERCENT;
     children: boolean = false;
+    gc: boolean = false;
 }

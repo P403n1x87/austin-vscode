@@ -1,5 +1,25 @@
 # Change Log
 
+## [1.2.0]
+
+### GC Activity
+
+- Added a **GC Activity** timeline panel inside the flame graph view, showing
+  per-thread garbage collector activity as proportional time spans. Hovering a
+  span shows the top-3 contributing leaf frames. Clicking a thread label zooms
+  the flame graph to that thread.
+
+- Added a **GC Top** sidebar panel listing the functions that were on the stack
+  during GC collection, with own and total GC time percentages, per-thread GC
+  summaries, and a filter bar. Clicking a thread row zooms the flame graph to
+  that thread; clicking a frame row opens the source file at that location.
+
+- Added a **GC** toggle in the status bar to enable or disable GC data
+  collection (`-g` / `--gc` flag). The toggle is persisted across sessions.
+
+- Added a `get_gc_data` MCP tool that exposes per-thread GC fractions and
+  the top functions executing during GC collection to AI chat agents.
+
 ## [1.1.2]
 
 - Fixed more packaging issues.

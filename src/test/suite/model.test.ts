@@ -385,6 +385,87 @@ suite('AustinStats — paused flag', () => {
 
 
 // ---------------------------------------------------------------------------
+// AustinStats — GC event collection
+// ---------------------------------------------------------------------------
+suite('AustinStats — gcEvents', () => {
+
+    test('gcEvents is empty on construction', () => {
+        const stats = new AustinStats();
+        assert.strictEqual(stats.gcEvents.length, 0);
+    });
+
+    test('update() appends a gcEvent for every call', () => {
+        const stats = new AustinStats();
+        stats.update(1, 'T1', [], 100);
+        stats.update(1, 'T1', [], 200);
+        assert.strictEqual(stats.gcEvents.length, 2);
+    });
+
+    test('gc flag defaults to false', () => {
+        const stats = new AustinStats();
+        stats.update(1, 'T1', [], 100);
+        assert.strictEqual(stats.gcEvents[0].gc, false);
+    });
+
+    test('gc flag is stored when true', () => {
+        const stats = new AustinStats();
+        stats.update(1, 'T1', [], 100, true);
+        assert.strictEqual(stats.gcEvents[0].gc, true);
+    });
+
+    test('pid and tid are recorded correctly', () => {
+        const stats = new AustinStats();
+        stats.update(42, 'T99', [], 100);
+        assert.strictEqual(stats.gcEvents[0].pid, 42);
+        assert.strictEqual(stats.gcEvents[0].tid, 'T99');
+    });
+
+    test('metric is recorded correctly', () => {
+        const stats = new AustinStats();
+        stats.update(1, 'T1', [], 777);
+        assert.strictEqual(stats.gcEvents[0].metric, 777);
+    });
+
+    test('frameKeys are built as module:scope', () => {
+        const stats = new AustinStats();
+        const frames = [
+            { module: '/a.py', scope: 'outer', line: 1 },
+            { module: '/b.py', scope: 'inner', line: 2 },
+        ];
+        stats.update(1, 'T1', frames, 100);
+        assert.deepStrictEqual(stats.gcEvents[0].frameKeys, ['/a.py:outer', '/b.py:inner']);
+    });
+
+    test('temporal order is preserved across multiple updates', () => {
+        const stats = new AustinStats();
+        stats.update(1, 'T1', [], 10, false);
+        stats.update(1, 'T1', [], 20, true);
+        stats.update(1, 'T1', [], 30, false);
+        assert.strictEqual(stats.gcEvents[0].gc, false);
+        assert.strictEqual(stats.gcEvents[1].gc, true);
+        assert.strictEqual(stats.gcEvents[2].gc, false);
+    });
+
+    test('clear() resets gcEvents to empty', () => {
+        const stats = new AustinStats();
+        stats.update(1, 'T1', [], 100, true);
+        stats.clear();
+        assert.strictEqual(stats.gcEvents.length, 0);
+    });
+
+    test('gcEvents from multiple threads are interleaved in call order', () => {
+        const stats = new AustinStats();
+        stats.update(1, 'T1', [], 10, true);
+        stats.update(1, 'T2', [], 20, false);
+        stats.update(1, 'T1', [], 30, false);
+        assert.strictEqual(stats.gcEvents[0].tid, 'T1');
+        assert.strictEqual(stats.gcEvents[1].tid, 'T2');
+        assert.strictEqual(stats.gcEvents[2].tid, 'T1');
+    });
+});
+
+
+// ---------------------------------------------------------------------------
 // AustinStats — error callbacks
 // ---------------------------------------------------------------------------
 suite('AustinStats — error callbacks', () => {

@@ -63,6 +63,11 @@
           "type": "boolean",
           "default": false
         },
+        "austin.gc": {
+          "description": "Collect GC data (-g)",
+          "type": "boolean",
+          "default": false
+        },
         "austin.lineStats": {
           "description": "Line statistics",
           "type": "string",
@@ -123,6 +128,12 @@
           "id": "austin-vscode.top",
           "name": "Top",
           "contextualTitle": "Top"
+        },
+        {
+          "type": "webview",
+          "id": "austin-vscode.gctop",
+          "name": "GC",
+          "contextualTitle": "GC"
         }
       ]
     },
@@ -155,6 +166,10 @@
       {
         "command": "austin-vscode.toggleChildren",
         "title": "Toggle Austin Children Profiling"
+      },
+      {
+        "command": "austin-vscode.toggleGC",
+        "title": "Toggle Austin GC Data Collection"
       },
       {
         "command": "austin-vscode.generateMcpJson",

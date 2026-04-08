@@ -390,10 +390,13 @@ suite('MojoParser — special frame types', () => {
         assert.ok(Math.abs(stats.top.get('/b.py:bar')!.total - 5 / 35) < 1e-9);
     });
 
-    test('GC frame is pushed onto stack', () => {
+    test('GC event sets gc=true on the resulting gcEvent', () => {
+        // MOJO_EVENT.gc (7) marks the following sample as a GC sample;
+        // it no longer injects a synthetic ":GC" frame into the stack.
         const bytes = buildStreamWithEvent([vi(7)]);  // MOJO_EVENT.gc
         const stats = parseWith(bytes);
-        assert.ok(stats.top.has(':GC'));
+        assert.ok(!stats.top.has(':GC'), 'synthetic GC frame must not appear in top');
+        assert.ok(stats.gcEvents.some(e => e.gc), 'at least one gcEvent should have gc=true');
     });
 
     test('kernel frame is pushed with module="kernel"', () => {

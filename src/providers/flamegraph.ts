@@ -2,6 +2,112 @@ import * as vscode from 'vscode';
 import { AustinStats } from '../model';
 import { generateInteractiveSVG } from '../flamegraph-svg';
 
+export interface GCTopFrame {
+    scope: string;
+    module: string;
+    fraction: number;  // metric / span duration
+}
+
+export interface GCSpan {
+    startFraction: number;    // startMetric / threadTotalMetric
+    durationFraction: number; // duration    / threadTotalMetric
+    durationPct: string;      // pre-formatted "X.Y"
+    topFrames: GCTopFrame[];
+}
+
+export interface GCThreadSpans {
+    label: string;     // "P{pid} T{tid}"
+    threadKey: string;
+    spans: GCSpan[];
+}
+
+export const GC_MIN_FRACTION = 0.001; // drop spans < 0.1% of thread timeline
+
+export function computeGCSpans(stats: AustinStats): GCThreadSpans[] {
+    // Group events by thread, preserving temporal order
+    const threadEvents = new Map<string, typeof stats.gcEvents>();
+    for (const ev of stats.gcEvents) {
+        const key = `${ev.pid}:${ev.tid}`;
+        if (!threadEvents.has(key)) { threadEvents.set(key, []); }
+        threadEvents.get(key)!.push(ev);
+    }
+
+    const result: GCThreadSpans[] = [];
+
+    for (const [threadKey, evs] of threadEvents) {
+        const rawSpans: { startMetric: number; duration: number; frameCount: Map<string, number> }[] = [];
+        let totalMetric = 0;
+        let spanActive = false;
+        let spanStart = 0;
+        let spanDuration = 0;
+        let frameCount = new Map<string, number>();
+
+        const closeSpan = () => {
+            rawSpans.push({ startMetric: spanStart, duration: spanDuration, frameCount });
+            spanActive = false;
+        };
+
+        for (const ev of evs) {
+            if (ev.metric <= 0) { continue; }
+            if (ev.gc) {
+                if (!spanActive) {
+                    spanActive = true;
+                    spanStart = totalMetric;
+                    spanDuration = 0;
+                    frameCount = new Map();
+                }
+                spanDuration += ev.metric;
+                // Only attribute to the leaf (innermost) frame so fractions are
+                // mutually exclusive and sum to ≤ 100% across top contributors.
+                const leaf = ev.frameKeys.length > 0 ? ev.frameKeys[ev.frameKeys.length - 1] : null;
+                if (leaf) {
+                    frameCount.set(leaf, (frameCount.get(leaf) ?? 0) + ev.metric);
+                }
+            } else {
+                if (spanActive) { closeSpan(); }
+            }
+            totalMetric += ev.metric;
+        }
+        if (spanActive) { closeSpan(); }
+
+        if (totalMetric === 0) { continue; }
+
+        const spans: GCSpan[] = rawSpans
+            .filter(s => s.duration / totalMetric >= GC_MIN_FRACTION)
+            .map(s => {
+                const topFrames: GCTopFrame[] = [...s.frameCount.entries()]
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 3)
+                    .map(([key, metric]) => {
+                        const topStats = stats.top.get(key);
+                        const lastColon = key.lastIndexOf(':');
+                        return {
+                            scope: topStats?.scope ?? (lastColon >= 0 ? key.slice(lastColon + 1) : key),
+                            module: topStats?.module ?? (lastColon >= 0 ? key.slice(0, lastColon) : ''),
+                            fraction: s.duration > 0 ? metric / s.duration : 0,
+                        };
+                    });
+                return {
+                    startFraction: s.startMetric / totalMetric,
+                    durationFraction: s.duration / totalMetric,
+                    durationPct: (s.duration / totalMetric * 100).toFixed(1),
+                    topFrames,
+                };
+            });
+
+        if (spans.length === 0) { continue; }
+
+        const parts = threadKey.split(':');
+        result.push({
+            label: `P${parts[0]} T${parts.slice(1).join(':')}`,
+            threadKey,
+            spans,
+        });
+    }
+
+    return result;
+}
+
 
 
 export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
@@ -138,6 +244,10 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         this._view?.webview.postMessage({ focus: pathKey });
     }
 
+    public focusThread(threadKey: string) {
+        this._view?.webview.postMessage({ focusThread: threadKey });
+    }
+
     public showDetachButton(isAttach: boolean = true) {
         this._sessionActive = true;
         this._isAttach = isAttach;
@@ -165,6 +275,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 this._view.webview.postMessage({
                     "meta": { "mode": stats.metadata.get("mode") },
                     "hierarchy": stats.hierarchy,
+                    "gcSpans": computeGCSpans(stats),
                 });
             }
         }
@@ -192,7 +303,14 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
             </head>
             <body class="logo">
                 <div id="header"><img id="austin-logo" class="${liveClass}" src="${austinLogoUri}" /><span class="vc" id="mode"></span><input id="search-box" type="text" placeholder="Search…" /><button id="header-share" onclick="onShare()">SHARE</button><button id="header-open" onclick="${btnOnclick}">${btnText}</button></div>
-                <div id="chart"></div>
+                <div id="chart">
+                    <div id="gc-panel">
+                        <details id="gc-details">
+                            <summary id="gc-summary">GC Activity</summary>
+                            <div id="gc-swimlanes"></div>
+                        </details>
+                    </div>
+                </div>
                 <div id="footer"></div>
 
                 <script type="text/javascript" src="${flameGraphUtilsUri}"></script>

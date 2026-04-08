@@ -4,6 +4,7 @@ import { FlameGraphViewProvider } from './providers/flamegraph';
 import { AustinController } from './controller';
 import { AustinStats } from './model';
 import { TopViewProvider } from './providers/top';
+import { GCTopViewProvider } from './providers/gctop';
 import { CallStackViewProvider } from './providers/callstack';
 import { AustinProfileTaskProvider } from './providers/task';
 import { AustinRuntimeSettings } from './settings';
@@ -60,16 +61,20 @@ export async function activate(context: vscode.ExtensionContext) {
 	const flameGraphViewProvider = new FlameGraphViewProvider(context.extensionUri);
 	const topProvider = new TopViewProvider(context.extensionUri);
 	const callStackProvider = new CallStackViewProvider(context.extensionUri);
+	const gcTopProvider = new GCTopViewProvider(context.extensionUri);
 
 	stats.registerBeforeCallback(() => flameGraphViewProvider.showLoading());
 	stats.registerBeforeCallback(() => topProvider.showLoading());
 	stats.registerBeforeCallback(() => callStackProvider.showLoading());
+	stats.registerBeforeCallback(() => gcTopProvider.showLoading());
 	stats.registerAfterCallback((stats) => flameGraphViewProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => topProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => callStackProvider.refresh(stats));
+	stats.registerAfterCallback((stats) => gcTopProvider.refresh(stats));
 	stats.registerErrorCallback(() => flameGraphViewProvider.showError());
 	stats.registerErrorCallback(() => topProvider.showError());
 	stats.registerErrorCallback(() => callStackProvider.showError());
+	stats.registerErrorCallback(() => gcTopProvider.showError());
 	stats.registerAfterCallback((stats) => {
 		const editor = vscode.window.activeTextEditor;
 		if (editor?.document.uri.scheme === "file") {
@@ -80,6 +85,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	flameGraphViewProvider.onFrameSelected((pathKey) => callStackProvider.focusPath(pathKey));
 	callStackProvider.onFrameSelected((pathKey) => flameGraphViewProvider.focusFrame(pathKey));
+	gcTopProvider.onThreadSelected((threadKey) => flameGraphViewProvider.focusThread(threadKey));
 
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(
@@ -98,6 +104,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(CallStackViewProvider.viewType, callStackProvider)
+	);
+
+	context.subscriptions.push(
+		vscode.window.registerWebviewViewProvider(GCTopViewProvider.viewType, gcTopProvider)
 	);
 
 	context.subscriptions.push(
@@ -192,6 +202,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				flameGraphViewProvider.showDetachButton(isAttach);
 				topProvider.showLive();
 				callStackProvider.showLive();
+				gcTopProvider.showLive();
 			}
 		})
 	);
@@ -214,6 +225,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			flameGraphViewProvider.showOpenButton();
 			topProvider.hideLive();
 			callStackProvider.hideLive();
+			gcTopProvider.hideLive();
 		})
 	);
 
@@ -267,6 +279,30 @@ export async function activate(context: vscode.ExtensionContext) {
 	);
 
 	childrenStatusBarItem.show();
+
+	// ---- GC toggle ----
+	const gcStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+	gcStatusBarItem.command = "austin-vscode.toggleGC";
+	gcStatusBarItem.tooltip = "Toggle GC data collection (-g)";
+
+	let gcEnabled = AustinRuntimeSettings.getGC();
+
+	function updateGCStatusBar() {
+		gcStatusBarItem.text = gcEnabled
+			? "$(trash) GC: ON"
+			: "$(trash) GC: OFF";
+	}
+	updateGCStatusBar();
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("austin-vscode.toggleGC", () => {
+			gcEnabled = !gcEnabled;
+			AustinRuntimeSettings.setGC(gcEnabled);
+			updateGCStatusBar();
+		})
+	);
+
+	gcStatusBarItem.show();
 
 	// ---- Mode selector ----
 	const austinModeStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);

@@ -194,6 +194,7 @@ export class MojoParser {
                                 `${currentIid}:${currentTid}`,
                                 currentStack,
                                 Number(mode === "memory" ? currentMemoryMetric! : currentTimeMetric!),
+                                currentGC,
                             );
                             // Save the current stack for back-attribution under the OLD key
                             previousStacks.set(currentStackKey!, currentStack);
@@ -244,7 +245,7 @@ export class MojoParser {
                         break;
 
                     case MOJO_EVENT.gc:
-                        currentStack.push(specialFrame("GC"));
+                        currentGC = true;
                         break;
 
                     case MOJO_EVENT.idle:
@@ -278,6 +279,7 @@ export class MojoParser {
                         `${currentIid}:${currentTid}`,
                         currentStack,
                         Number(mode === "memory" ? currentMemoryMetric! : currentTimeMetric!),
+                        currentGC,
                     );
                 }
                 return;
@@ -306,6 +308,7 @@ export class StreamingMojoParser {
     private mode: string | null = null;
     private previousStacks = new Map<string, FrameObject[]>();
     private invalidFrame = false;
+    private currentGC = false;
 
     constructor(private readonly stats: AustinStats) {}
 
@@ -398,6 +401,7 @@ export class StreamingMojoParser {
                         `${this.currentIid}:${this.currentTid}`,
                         this.currentStack,
                         Number(this.mode === "memory" ? this.currentMemoryMetric! : this.currentTimeMetric!),
+                        this.currentGC,
                     );
                     this.previousStacks.set(this.currentStackKey!, this.currentStack);
                 }
@@ -409,6 +413,7 @@ export class StreamingMojoParser {
                 this.currentTimeMetric = null;
                 this.currentMemoryMetric = null;
                 this.invalidFrame = false;
+                this.currentGC = false;
                 break;
             }
             case MOJO_EVENT.frame: {
@@ -439,7 +444,7 @@ export class StreamingMojoParser {
                 break;
             }
             case MOJO_EVENT.gc:
-                this.currentStack.push(specialFrame("GC"));
+                this.currentGC = true;
                 break;
             case MOJO_EVENT.idle:
                 break;
@@ -498,6 +503,7 @@ export class StreamingMojoParser {
                 `${this.currentIid}:${this.currentTid}`,
                 this.currentStack,
                 Number(this.mode === "memory" ? this.currentMemoryMetric! : this.currentTimeMetric!),
+                this.currentGC,
             );
         }
     }
