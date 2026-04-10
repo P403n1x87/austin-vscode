@@ -5,14 +5,15 @@
 
     // ── Utilities (loaded from flamegraph-utils.js) ───────────────────────────
     // @ts-ignore
-    const { colorFor, basename, isEmpty, footerText, esc } = FlamegraphUtils;
+    const { colorFor, basename, isEmpty, footerText, esc, hashPath } = FlamegraphUtils;
 
-    /** @param {any} node @param {string} parentKey */
-    function addPathKeys(node, parentKey) {
-        const myKey = parentKey ? parentKey + '/' + node.name : node.name;
-        node.pathKey = myKey;
+    /** @param {any} node @param {number} parentHash */
+    function addPathKeys(node, parentHash) {
+        // Use node.key (module:scope for frames, bare name for process/thread) so that
+        // two functions with the same name in different modules get distinct frameKeys.
+        node.frameKey = hashPath(node.key, parentHash);
         if (node.children) {
-            for (const child of node.children) { addPathKeys(child, myKey); }
+            for (const child of node.children) { addPathKeys(child, node.frameKey); }
         }
     }
 
@@ -294,10 +295,10 @@
 
     function applySearch() {
         for (const f of frames) {
-            if (!searchTerm) { f.highlighted = false; continue; }
             if (searchMode === 'path') {
-                f.highlighted = f.node.pathKey === searchTerm;
+                f.highlighted = f.node.frameKey === searchTerm;
             } else {
+                if (!searchTerm) { f.highlighted = false; continue; }
                 f.highlighted = (f.node.name || '').indexOf(searchTerm) !== -1 ||
                     !!(f.node.file && f.node.file.indexOf(searchTerm) !== -1);
             }
@@ -308,14 +309,14 @@
     function loadData(hierarchy) {
         if (!hierarchy || isEmpty(hierarchy)) { return; }
         if (hierarchy.children) {
-            for (const child of hierarchy.children) { addPathKeys(child, ''); }
+            for (const child of hierarchy.children) { addPathKeys(child, 0); }
         }
         // Preserve zoom and search across live updates by re-finding the node
-        const prevZoomKey = zoomNode ? zoomNode.pathKey : null;
+        const prevZoomKey = zoomNode ? zoomNode.frameKey : null;
         rootNode = hierarchy;
         hoveredFrame = null;
-        if (prevZoomKey) {
-            zoomNode = findByPathKey(rootNode, prevZoomKey) || null;
+        if (prevZoomKey !== null && prevZoomKey !== undefined) {
+            zoomNode = findByKey(rootNode, prevZoomKey) || null;
         } else {
             zoomNode = null;
             searchTerm = '';
@@ -350,26 +351,26 @@
         render(canvas, ctx, frames, hoveredFrame, null, 1);
     }
 
-    /** @param {any} node @param {string} pathKey @returns {any} */
-    function findByPathKey(node, pathKey) {
-        if (node.pathKey === pathKey) { return node; }
+    /** @param {any} node @param {number} frameKey @returns {any} */
+    function findByKey(node, frameKey) {
+        if (node.frameKey === frameKey) { return node; }
         if (node.children) {
             for (const child of node.children) {
-                const found = findByPathKey(child, pathKey);
+                const found = findByKey(child, frameKey);
                 if (found) { return found; }
             }
         }
         return null;
     }
 
-    /** @param {string} pathKey */
-    function focusByPathKey(pathKey) {
+    /** @param {number} frameKey */
+    function focusByKey(frameKey) {
         if (!rootNode) { return; }
-        const target = findByPathKey(rootNode, pathKey);
+        const target = findByKey(rootNode, frameKey);
         // Set state in one shot to avoid double animation
         zoomNode = target || null;
         hoveredFrame = null;
-        searchTerm = pathKey;
+        searchTerm = frameKey;
         searchMode = 'path';
         rebuildAndRender(true);
         if (target) {
@@ -385,7 +386,7 @@
         if (!f) { return; }
         zoomTo(f.node);
         if (f.node.file) {
-            vscode.postMessage({ file: f.node.file, name: f.node.name, line: f.node.line, source: f.node.source });
+            vscode.postMessage({ file: f.node.file, name: f.node.name, line: f.node.line, source: f.node.source, frameKey: f.node.frameKey });
         }
     });
 
@@ -578,8 +579,8 @@
         } else if (msg.focusThread) {
             const node = findThreadNode(msg.focusThread);
             if (node) { zoomTo(node); }
-        } else if (msg.focus) {
-            focusByPathKey(msg.focus);
+        } else if (msg.focus !== undefined) {
+            focusByKey(msg.focus);
         } else if (msg.search) {
             setSearch(msg.search, 'text');
         } else if (msg.meta !== undefined) {

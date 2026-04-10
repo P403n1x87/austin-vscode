@@ -34,6 +34,23 @@
         return h;
     }
 
+    /**
+     * djb2-variant hash returning a 32-bit unsigned integer.
+     * Accepts an optional seed so callers can chain calls for path segments
+     * (rolling hash) without building intermediate path strings.
+     * Same algorithm used in src/utils/pathKey.ts for cross-boundary consistency.
+     * @param {string} text
+     * @param {number} [seed]
+     * @returns {number}
+     */
+    function hashPath(text, seed) {
+        let h = seed | 0;
+        for (let i = 0; i < text.length; i++) {
+            h = (((h << 5) + h) + text.charCodeAt(i)) | 0;
+        }
+        return h >>> 0;
+    }
+
     /** @param {any} node */
     function colorFor(node) {
         if (node.kind === 'process') { return hslToHex(120, hash(node.name) % 20, 70); }
@@ -92,5 +109,5 @@
         return metric + ' &nbsp;\u00B7&nbsp; ' + scope + file;
     }
 
-    return { hslToHex, hash, colorFor, esc, basename, isEmpty, formatValue, footerText };
+    return { hslToHex, hash, hashPath, colorFor, esc, basename, isEmpty, formatValue, footerText };
 }));

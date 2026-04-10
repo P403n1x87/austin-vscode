@@ -83,8 +83,8 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
-	flameGraphViewProvider.onFrameSelected((pathKey) => callStackProvider.focusPath(pathKey));
-	callStackProvider.onFrameSelected((pathKey) => flameGraphViewProvider.focusFrame(pathKey));
+	flameGraphViewProvider.onFrameSelected((frameKey) => callStackProvider.focusPath(frameKey));
+	callStackProvider.onFrameSelected((frameKey) => flameGraphViewProvider.focusFrame(frameKey));
 	gcTopProvider.onThreadSelected((threadKey) => flameGraphViewProvider.focusThread(threadKey));
 
 	mcpServer.setActions({
@@ -97,8 +97,8 @@ export async function activate(context: vscode.ExtensionContext) {
 			}
 			vscode.commands.executeCommand('austin-vscode.flame-graph.focus');
 		},
-		focusFrame: (pathKey) => {
-			flameGraphViewProvider.focusFrame(pathKey);
+		focusFrame: (frameKey) => {
+			flameGraphViewProvider.focusFrame(frameKey);
 			vscode.commands.executeCommand('austin-vscode.flame-graph.focus');
 		},
 		searchFrames: (term) => {

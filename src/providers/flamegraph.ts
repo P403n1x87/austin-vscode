@@ -119,7 +119,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
     private _lines: boolean = false;
     private _stats: AustinStats | null = null;
     private _initialized: boolean = false;
-    private _onFrameSelected?: (pathKey: string) => void;
+    private _onFrameSelected?: (frameKey: number) => void;
     private _sessionActive: boolean = false;
     private _isAttach: boolean = false;
     private _flameHtmlSet: boolean = false;
@@ -221,8 +221,8 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
             const module = data.file;
             if (source && module) {
                 vscode.commands.executeCommand('austin-vscode.openSourceAtLine', module, data.line || 0);
-                if (this._onFrameSelected && data.pathKey) {
-                    this._onFrameSelected(data.pathKey);
+                if (this._onFrameSelected && data.frameKey !== undefined) {
+                    this._onFrameSelected(data.frameKey);
                 }
             }
         });
@@ -232,7 +232,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         webviewView.show(true);
     }
 
-    public onFrameSelected(cb: (pathKey: string) => void) {
+    public onFrameSelected(cb: (frameKey: number) => void) {
         this._onFrameSelected = cb;
     }
 
@@ -240,8 +240,8 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
         this._view?.webview.postMessage({ search: term });
     }
 
-    public focusFrame(pathKey: string) {
-        this._view?.webview.postMessage({ focus: pathKey });
+    public focusFrame(frameKey: number) {
+        this._view?.webview.postMessage({ focus: frameKey });
     }
 
     public focusThread(threadKey: string) {
