@@ -33,7 +33,8 @@ function colorFor(node: any): string {
     if (!node.file) { return hslToHex(0, 10, 70); }
     const h = nodeHash(node.file) % 360;
     const s = nodeHash(node.name || '') % 10;
-    return hslToHex(h >= 0 ? h : -h, (node.file.endsWith('.py') ? 60 : 20) + s, 60);
+    const isPy = node.file.endsWith('.py') || (node.file.startsWith('<') && node.file.endsWith('>'));
+    return hslToHex(h >= 0 ? h : -h, (isPy ? 60 : 5) + s, isPy ? 60 : 45);
 }
 
 function nodeBasename(p: string): string {
@@ -164,12 +165,18 @@ export function generateInteractiveSVG(hierarchy: any, mode: string, logoB64?: s
             (file ? ` <tspan opacity="0.5">${escXml(file)}</tspan>` : '');
         const textHide = f.w < LABEL_MIN_W ? ' display="none"' : '';
 
+        const isNative = f.node.file && !f.node.file.endsWith('.py');
         frameEls.push(
             `<g class="frame" id="f${id}" data-id="${id}" style="cursor:pointer">` +
             `<rect id="r${id}" x="${f.x.toFixed(1)}" y="${fy}" ` +
             `width="${f.w.toFixed(1)}" height="${CELL_H}" ` +
             `fill="${f.color}" opacity="${opacity}" ` +
             `stroke="rgba(0,0,0,0.18)" stroke-width="0.5"/>` +
+            (isNative
+                ? `<rect id="nh${id}" x="${f.x.toFixed(1)}" y="${fy}" ` +
+                  `width="${f.w.toFixed(1)}" height="${CELL_H}" ` +
+                  `fill="url(#native-hatch)" opacity="${opacity}" pointer-events="none"/>`
+                : '') +
             `<text id="t${id}" clip-path="url(#c${id})" ` +
             `x="${(f.x + 4).toFixed(1)}" y="${(fy + CELL_H / 2).toFixed(1)}" ` +
             `dominant-baseline="middle" font-size="13" ` +
@@ -188,6 +195,8 @@ export function generateInteractiveSVG(hierarchy: any, mode: string, logoB64?: s
         `     style="background:${bgColor};font-family:system-ui,sans-serif;display:block">`,
         ``,
         `  <defs>`,
+        `    <pattern id="native-hatch" patternUnits="userSpaceOnUse" width="6" height="6">` +
+        `<path d="M-1,1 l2,-2 M0,6 l6,-6 M5,7 l2,-2" stroke="rgba(0,0,0,0.2)" stroke-width="1.5" stroke-linecap="square"/></pattern>`,
         ...clipDefs.map(d => `    ${d}`),
         `  </defs>`,
         ``,
@@ -266,7 +275,8 @@ function buildEmbeddedScript(): string {
         if (n.kind === 'thread')  { return hslToHex(240, nhash(n.name) % 20, 70); }
         if (!n.file) { return hslToHex(0, 10, 70); }
         const h = nhash(n.file) % 360;
-        return hslToHex(h >= 0 ? h : -h, (n.file.endsWith('.py') ? 60 : 20) + nhash(n.name || '') % 10, 60);
+        const ip = n.file.endsWith('.py') || (n.file.startsWith('<') && n.file.endsWith('>'));
+        return hslToHex(h >= 0 ? h : -h, (ip ? 60 : 5) + nhash(n.name || '') % 10, ip ? 60 : 45);
     }
     function basename(p) { return p ? p.replace(/\\/g, '/').split('/').pop() || p : ''; }
     function fmt(v) {
@@ -369,6 +379,13 @@ function buildEmbeddedScript(): string {
                 rect.setAttribute('width',   f.w);
                 rect.setAttribute('opacity', op);
                 rect.setAttribute('fill',    colorFor(f.node));
+            }
+            const hatch = document.getElementById('nh' + id);
+            if (hatch) {
+                hatch.setAttribute('x',       f.x);
+                hatch.setAttribute('y',       fy);
+                hatch.setAttribute('width',   f.w);
+                hatch.setAttribute('opacity', op);
             }
             if (cr) {
                 cr.setAttribute('x',     f.x);

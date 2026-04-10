@@ -140,6 +140,24 @@
             ctx.fillStyle = f.color;
             ctx.fillRect(x, y, w, CELL_H);
 
+            // Native (non-Python) frames get a diagonal hatch overlay
+            if (f.node.file && !f.node.file.endsWith('.py')) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(x, y, w, CELL_H);
+                ctx.clip();
+                ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+                ctx.lineWidth = 1.5;
+                const step = 5;
+                for (let ox = -CELL_H; ox < w + CELL_H; ox += step) {
+                    ctx.beginPath();
+                    ctx.moveTo(x + ox, y);
+                    ctx.lineTo(x + ox + CELL_H, y + CELL_H);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
             ctx.strokeStyle = 'rgba(0,0,0,0.18)';
             ctx.lineWidth = 0.5;
             ctx.strokeRect(x + 0.25, y + 0.25, w - 0.5, CELL_H - 0.5);

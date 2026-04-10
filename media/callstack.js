@@ -94,6 +94,7 @@
         const hasChildren = (node.children && node.children.length > 0) || node.childrenPending;
 
         const tr = document.createElement('tr');
+        if (isNative(node.module)) { tr.classList.add('native-frame'); }
         tr.dataset.rowId = rowId;
         tr.dataset.level = String(level);
         if (parentId !== null) {
@@ -217,6 +218,7 @@
         const hasChildren = (node.children && node.children.length > 0) || node.childrenPending;
 
         const tr = document.createElement('tr');
+        if (isNative(node.module)) { tr.classList.add('native-frame'); }
         tr.dataset.rowId = rowId;
         tr.dataset.level = String(level);
         tr.dataset.parentId = parentId;
@@ -266,6 +268,10 @@
         if (pct >= 50) { return '#e67e22'; }
         if (pct >= 25) { return '#f1c40f'; }
         return null;
+    }
+
+    function isNative(module) {
+        return !!module && !module.endsWith('.py') && !(module.startsWith('<') && module.endsWith('>'));
     }
 
     function fmt(v) { return (v * 100).toFixed(2); }

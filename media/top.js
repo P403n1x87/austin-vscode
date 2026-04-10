@@ -113,6 +113,7 @@
 
         const tr = document.createElement('tr');
         tr.className = 'top-row';
+        if (isNative(item.module)) { tr.classList.add('native-frame'); }
         tr.dataset.rowId = rowId;
         tr.dataset.level = '0';
         tr.dataset.callerKey = item.key;
@@ -145,6 +146,7 @@
 
             const tr = document.createElement('tr');
             tr.className = 'caller-row';
+            if (isNative(caller.module)) { tr.classList.add('native-frame'); }
             tr.dataset.rowId = rowId;
             tr.dataset.parentId = parentId;
             tr.dataset.level = String(level);
@@ -335,6 +337,10 @@
         if (pct >= 50) { return '#e67e22'; }
         if (pct >= 25) { return '#f1c40f'; }
         return null;
+    }
+
+    function isNative(module) {
+        return !!module && !module.endsWith('.py') && !(module.startsWith('<') && module.endsWith('>'));
     }
 
     function fmt(v) { return (v * 100).toFixed(2); }
