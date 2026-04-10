@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
+import { hashPath } from '../../utils/pathKey';
 import { Readable } from 'stream';
 import { AustinMcpServer } from '../../providers/mcp';
 import { AustinStats } from '../../model';
@@ -396,9 +397,9 @@ suite('AustinMcpServer', () => {
         assert.strictEqual(frames.length, 1);
     });
 
-    // --- get_call_stacks pathKey --------------------------------------------
+    // --- get_call_stacks nodeId ---------------------------------------------
 
-    test('get_call_stacks nodes include pathKey', async () => {
+    test('get_call_stacks nodes include a unique numeric nodeId', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
         server = await startedServer(stats);
         const res = await post(server.port, {
@@ -407,30 +408,45 @@ suite('AustinMcpServer', () => {
         }) as Record<string, unknown>;
 
         const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
-        type Node = { pathKey: string; children: Node[] };
+        type Node = { nodeId: number; children: Node[] };
         const tree = JSON.parse(content[0].text) as Node[];
         const processNode = tree[0];
-        assert.strictEqual(processNode.pathKey, 'Process 1');
         const threadNode = processNode.children[0];
-        assert.ok(threadNode.pathKey.startsWith('Process 1/Thread '), 'thread pathKey should be nested under process');
         const frameNode = threadNode.children[0];
-        assert.strictEqual(frameNode.pathKey, threadNode.pathKey + '/fn');
+        assert.strictEqual(typeof processNode.nodeId, 'number');
+        assert.strictEqual(typeof threadNode.nodeId, 'number');
+        assert.strictEqual(typeof frameNode.nodeId, 'number');
+        const ids = new Set([processNode.nodeId, threadNode.nodeId, frameNode.nodeId]);
+        assert.strictEqual(ids.size, 3, 'nodeIds should be unique');
     });
 
-    test('get_call_stacks pathKey is consistent across nested children', async () => {
-        const stats = await makeStats('P1;T1;/a.py:outer:1;/a.py:inner:2 100\n');
+    test('get_call_stacks nodeId resolves to the correct flamegraph path via focus_flamegraph', async () => {
+        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
         server = await startedServer(stats);
-        const res = await post(server.port, {
+
+        const csRes = await post(server.port, {
             jsonrpc: '2.0', method: 'tools/call', id: 20,
             params: { name: 'get_call_stacks', arguments: {} },
         }) as Record<string, unknown>;
+        const csContent = (csRes.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        type Node = { nodeId: number; scope: string; children: Node[] };
+        const tree = JSON.parse(csContent[0].text) as Node[];
+        const frameNode = tree[0].children[0].children[0]; // process → thread → frame
+        assert.strictEqual(frameNode.scope, 'fn');
 
-        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
-        type Node = { pathKey: string; children: Node[] };
-        const tree = JSON.parse(content[0].text) as Node[];
-        const frameNode = tree[0].children[0].children[0];
-        const nestedNode = frameNode.children[0];
-        assert.ok(nestedNode.pathKey.startsWith(frameNode.pathKey + '/'), 'nested pathKey should extend parent');
+        let calledWith: number | null = null;
+        server.setActions({ loadFile: () => {}, focusFrame: (k) => { calledWith = k; }, searchFrames: () => {} });
+        await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 20,
+            params: { name: 'focus_flamegraph', arguments: { nodeId: frameNode.nodeId } },
+        });
+        // Verify the exact frameKey: rolling hash matching flamegraph.js for P1→T1→/a.py:fn.
+        // The parser strips the leading "P"/"T" from pid/tid, so pid="1" → "Process 1",
+        // tid="1" → "Thread 1". Process/thread nodes have no module so their key is the
+        // bare scope; frames use "module:scope" (matching node.key in the flamegraph hierarchy).
+        const expectedKey = hashPath('/a.py:fn', hashPath('Thread 1', hashPath('Process 1')));
+        assert.strictEqual(calledWith, expectedKey,
+            `focusFrame should receive frameKey=${expectedKey} (Process 1 → Thread 1 → /a.py:fn), got: ${calledWith}`);
     });
 
     // --- load_profile -------------------------------------------------------
@@ -518,13 +534,13 @@ suite('AustinMcpServer', () => {
         server.setActions({ loadFile: () => {}, focusFrame: () => {}, searchFrames: () => {} });
         const res = await post(server.port, {
             jsonrpc: '2.0', method: 'tools/call', id: 26,
-            params: { name: 'focus_flamegraph', arguments: { key: 'Process 1/Thread T1/fn' } },
+            params: { name: 'focus_flamegraph', arguments: { nodeId: 0 } },
         }) as Record<string, unknown>;
         const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
         assert.ok(content[0].text.includes('No profiling data'));
     });
 
-    test('focus_flamegraph returns error for missing key argument', async () => {
+    test('focus_flamegraph returns error for missing nodeId argument', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
         server = await startedServer(stats);
         server.setActions({ loadFile: () => {}, focusFrame: () => {}, searchFrames: () => {} });
@@ -536,26 +552,34 @@ suite('AustinMcpServer', () => {
         assert.ok(content[0].text.toLowerCase().includes('missing'));
     });
 
-    test('focus_flamegraph invokes focusFrame action with the given key', async () => {
+    test('focus_flamegraph returns error for unknown nodeId', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
         server = await startedServer(stats);
-        let calledWith: string | null = null;
-        server.setActions({ loadFile: () => {}, focusFrame: (k) => { calledWith = k; }, searchFrames: () => {} });
-        const key = 'Process 1/Thread T1/fn';
-        await post(server.port, {
+        server.setActions({ loadFile: () => {}, focusFrame: () => {}, searchFrames: () => {} });
+        // 9999 was never returned by get_call_stacks
+        const res = await post(server.port, {
             jsonrpc: '2.0', method: 'tools/call', id: 28,
-            params: { name: 'focus_flamegraph', arguments: { key } },
-        });
-        assert.strictEqual(calledWith, key);
+            params: { name: 'focus_flamegraph', arguments: { nodeId: 9999 } },
+        }) as Record<string, unknown>;
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        assert.ok(content[0].text.toLowerCase().includes('unknown'));
     });
 
     test('focus_flamegraph returns not-available message when no actions are set', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
         server = await startedServer(stats);
-        // Deliberately do not call setActions
+        // Populate _nodeIdMap via get_call_stacks, then attempt focus without actions
+        const csRes = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 29,
+            params: { name: 'get_call_stacks', arguments: {} },
+        }) as Record<string, unknown>;
+        const csContent = (csRes.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        type Node = { nodeId: number; children: Node[] };
+        const nodeId = (JSON.parse(csContent[0].text) as Node[])[0].nodeId;
+
         const res = await post(server.port, {
             jsonrpc: '2.0', method: 'tools/call', id: 29,
-            params: { name: 'focus_flamegraph', arguments: { key: 'Process 1/Thread T1/fn' } },
+            params: { name: 'focus_flamegraph', arguments: { nodeId } },
         }) as Record<string, unknown>;
         const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
         assert.ok(content[0].text.toLowerCase().includes('not available'));

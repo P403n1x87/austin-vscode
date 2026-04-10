@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import { AustinStats, TopStats } from '../model';
+import { hashPath } from '../utils/pathKey';
 
 interface CallStackNode {
-    pathKey: string;
+    frameKey: number;
     scope: string;
     module: string | null;
     own: number;
@@ -19,19 +20,20 @@ function normalizeScope(scope: string): string {
     return type === 'P' ? `Process ${id}` : `Thread ${id}`;
 }
 
-function serializeNode(node: TopStats, parentPath: string, depth: number): CallStackNode {
+function serializeNode(node: TopStats, parentHash: number, depth: number): CallStackNode {
     const scope = normalizeScope(node.scope ?? '');
-    const pathKey = parentPath ? `${parentPath}/${scope}` : scope;
+    const key = node.module ? `${node.module}:${scope}` : scope;
+    const frameKey = hashPath(key, parentHash);
     const hasChildren = node.callees.size > 0;
     return {
-        pathKey,
+        frameKey,
         scope,
         module: node.module || null,
         own: node.own,
         total: node.total,
         line: node.minLine,
         children: depth > 0
-            ? [...node.callees.values()].map(child => serializeNode(child, pathKey, depth - 1))
+            ? [...node.callees.values()].map(child => serializeNode(child, frameKey, depth - 1))
             : [],
         childrenPending: hasChildren && depth <= 0,
     };
@@ -44,8 +46,8 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private _stats: AustinStats | null = null;
     private _initialized: boolean = false;
-    private _onFrameSelected?: (pathKey: string) => void;
-    private _nodeMap: Map<string, TopStats> = new Map();
+    private _onFrameSelected?: (frameKey: number) => void;
+    private _nodeMap: Map<number, TopStats> = new Map();
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
@@ -81,15 +83,15 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
             if (data.module) {
                 vscode.commands.executeCommand('austin-vscode.openSourceAtLine', data.module, data.line || 0);
             }
-            if (data.pathKey && this._onFrameSelected) {
-                this._onFrameSelected(data.pathKey);
+            if (data.frameKey !== undefined && this._onFrameSelected) {
+                this._onFrameSelected(data.frameKey);
             }
-            if (data.requestChildren) {
-                const node = this._nodeMap.get(data.requestChildren);
+            if (data.requestChildren !== undefined) {
+                const parentFrameKey = data.requestChildren as number;
+                const node = this._nodeMap.get(parentFrameKey);
                 if (node) {
-                    const parentPathKey = data.requestChildren;
-                    const children = [...node.callees.values()].map(child => serializeNode(child, parentPathKey, 3));
-                    this._view?.webview.postMessage({ childrenFor: parentPathKey, children });
+                    const children = [...node.callees.values()].map(child => serializeNode(child, parentFrameKey, 3));
+                    this._view?.webview.postMessage({ childrenFor: parentFrameKey, children });
                 }
             }
         });
@@ -97,7 +99,7 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         webviewView.webview.html = this._getHtml(webviewView.webview);
     }
 
-    public onFrameSelected(cb: (pathKey: string) => void) {
+    public onFrameSelected(cb: (frameKey: number) => void) {
         this._onFrameSelected = cb;
     }
 
@@ -117,8 +119,8 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         this._view?.webview.postMessage({ live: false });
     }
 
-    public focusPath(pathKey: string) {
-        this._view?.webview.postMessage({ focus: { pathKey } });
+    public focusPath(frameKey: number) {
+        this._view?.webview.postMessage({ focus: { frameKey } });
     }
 
     public refresh(stats: AustinStats) {
@@ -126,21 +128,22 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         if (this._view && this._initialized) { this._postData(stats); }
     }
 
-    private _buildNodeMap(node: TopStats, parentPath: string): void {
+    private _buildNodeMap(node: TopStats, parentHash: number): void {
         const scope = normalizeScope(node.scope ?? '');
-        const pathKey = parentPath ? `${parentPath}/${scope}` : scope;
-        this._nodeMap.set(pathKey, node);
+        const key = node.module ? `${node.module}:${scope}` : scope;
+        const frameKey = hashPath(key, parentHash);
+        this._nodeMap.set(frameKey, node);
         for (const child of node.callees.values()) {
-            this._buildNodeMap(child, pathKey);
+            this._buildNodeMap(child, frameKey);
         }
     }
 
     private _postData(stats: AustinStats) {
         this._nodeMap.clear();
         for (const node of stats.callStack.callees.values()) {
-            this._buildNodeMap(node, '');
+            this._buildNodeMap(node, 0);
         }
-        const tree = [...stats.callStack.callees.values()].map(node => serializeNode(node, '', 3));
+        const tree = [...stats.callStack.callees.values()].map(node => serializeNode(node, 0, 3));
         this._view!.webview.postMessage({ tree });
     }
 

@@ -32,7 +32,7 @@
         } else if (msg.childrenFor !== undefined) {
             insertLazyChildren(msg.childrenFor, msg.children);
         } else if (msg.focus) {
-            if (syncToggle.checked) { focusPath(msg.focus.pathKey); }
+            if (syncToggle.checked) { focusPath(msg.focus.frameKey); }
         } else if (msg.live !== undefined) {
             liveDot.classList.toggle('active', !!msg.live);
         } else if (msg.error) {
@@ -73,9 +73,9 @@
 
     function restoreExpanded() {
         if (expandedPaths.size === 0) { return; }
-        document.querySelectorAll('tr[data-expandable][data-path-key]').forEach(tr => {
-            const pk = tr.dataset.pathKey;
-            if (!pk || !expandedPaths.has(pk)) { return; }
+        document.querySelectorAll('tr[data-expandable][data-frame-key]').forEach(tr => {
+            const fk = parseInt(tr.dataset.frameKey, 10);
+            if (isNaN(fk) || !expandedPaths.has(fk)) { return; }
             const rowId = tr.dataset.rowId;
             document.querySelectorAll(`tr[data-parent-id="${rowId}"]`).forEach(child => {
                 child.style.display = '';
@@ -101,7 +101,7 @@
             tr.style.display = 'none';
         }
         if (hasChildren) { tr.dataset.expandable = '1'; }
-        tr.dataset.pathKey = node.pathKey || '';
+        tr.dataset.frameKey = String(node.frameKey);
         if (node.childrenPending) { tr.dataset.childrenPending = '1'; }
 
         const indent = level * 10;
@@ -121,7 +121,7 @@
         tr.addEventListener('click', () => {
             if (node.module) { navigate(node.module, node.line); }
             if (hasChildren) { toggleRow(rowId); }
-            if (node.pathKey && syncToggle.checked) { vscode.postMessage({ pathKey: node.pathKey }); }
+            if (node.frameKey !== undefined && syncToggle.checked) { vscode.postMessage({ frameKey: node.frameKey }); }
         });
 
         if (typeof parent.appendChild === 'function') {
@@ -148,12 +148,12 @@
             expanded.delete(rowId);
             if (row) {
                 delete row.dataset.open;
-                if (row.dataset.pathKey) { expandedPaths.delete(row.dataset.pathKey); }
+                if (row.dataset.frameKey) { expandedPaths.delete(parseInt(row.dataset.frameKey, 10)); }
             }
         } else {
             if (row && row.dataset.childrenPending) {
                 // Children not yet loaded — request from extension
-                vscode.postMessage({ requestChildren: row.dataset.pathKey });
+                vscode.postMessage({ requestChildren: parseInt(row.dataset.frameKey, 10) });
                 return;
             }
             document.querySelectorAll(`tr[data-parent-id="${rowId}"]`).forEach(tr => {
@@ -162,7 +162,7 @@
             expanded.add(rowId);
             if (row) {
                 row.dataset.open = '1';
-                if (row.dataset.pathKey) { expandedPaths.add(row.dataset.pathKey); }
+                if (row.dataset.frameKey) { expandedPaths.add(parseInt(row.dataset.frameKey, 10)); }
             }
         }
     }
@@ -176,12 +176,12 @@
                 expanded.delete(childId);
                 delete tr.dataset.open;
             }
-            if (tr.dataset.pathKey) { expandedPaths.delete(tr.dataset.pathKey); }
+            if (tr.dataset.frameKey) { expandedPaths.delete(parseInt(tr.dataset.frameKey, 10)); }
         });
     }
 
-    function insertLazyChildren(parentPathKey, children) {
-        const parentRow = document.querySelector(`tr[data-path-key="${CSS.escape(parentPathKey)}"]`);
+    function insertLazyChildren(parentFrameKey, children) {
+        const parentRow = document.querySelector(`tr[data-frame-key="${parentFrameKey}"]`);
         if (!parentRow) { return; }
         const parentId = parentRow.dataset.rowId;
         const parentLevel = parseInt(parentRow.dataset.level || '0', 10);
@@ -209,7 +209,7 @@
         });
         expanded.add(parentId);
         parentRow.dataset.open = '1';
-        expandedPaths.add(parentPathKey);
+        expandedPaths.add(parentFrameKey);
     }
 
     function insertNodeBefore(tbody, refNode, node, parentId, level) {
@@ -222,7 +222,7 @@
         tr.dataset.parentId = parentId;
         tr.style.display = 'none';
         if (hasChildren) { tr.dataset.expandable = '1'; }
-        tr.dataset.pathKey = node.pathKey || '';
+        tr.dataset.frameKey = String(node.frameKey);
         if (node.childrenPending) { tr.dataset.childrenPending = '1'; }
 
         const indent = level * 10;
@@ -242,7 +242,7 @@
         tr.addEventListener('click', () => {
             if (node.module) { navigate(node.module, node.line); }
             if (hasChildren) { toggleRow(rowId); }
-            if (node.pathKey && syncToggle.checked) { vscode.postMessage({ pathKey: node.pathKey }); }
+            if (node.frameKey !== undefined && syncToggle.checked) { vscode.postMessage({ frameKey: node.frameKey }); }
         });
 
         tbody.insertBefore(tr, refNode || null);
@@ -287,11 +287,11 @@
         vscode.postMessage({ module, line });
     }
 
-    function focusPath(pathKey) {
-        if (!pathKey) { return; }
+    function focusPath(frameKey) {
+        if (frameKey === undefined || frameKey === null) { return; }
         let target = null;
-        for (const tr of document.querySelectorAll('tr[data-path-key]')) {
-            if (tr.dataset.pathKey === pathKey) { target = tr; break; }
+        for (const tr of document.querySelectorAll('tr[data-frame-key]')) {
+            if (parseInt(tr.dataset.frameKey, 10) === frameKey) { target = tr; break; }
         }
         if (!target) { return; }
 

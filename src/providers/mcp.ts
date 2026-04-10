@@ -1,11 +1,19 @@
 import * as http from 'http';
 import { existsSync } from 'fs';
 import { AustinStats, TopStats } from '../model';
+import { hashPath } from '../utils/pathKey';
 
 export interface McpActions {
     loadFile: (path: string) => void;
-    focusFrame: (pathKey: string) => void;
+    focusFrame: (frameKey: number) => void;
     searchFrames: (term: string) => void;
+}
+
+function normalizeScope(scope: string): string {
+    const match = scope.match(/^([PT])([x0-9A-Fa-f]+)$/);
+    if (!match) { return scope; }
+    const [, type, id] = match;
+    return type === 'P' ? `Process ${id}` : `Thread ${id}`;
 }
 
 const MCP_PROTOCOL_VERSION = '2024-11-05';
@@ -37,7 +45,7 @@ const TOOLS = [
             'Each node has: scope (function name), module (source file path), own (fraction of',
             'total profiling time spent directly in this function body), total (fraction spent in',
             'this function and everything it calls — this is the flame graph width, i.e. the',
-            '"plateau" size), children, and pathKey (pass directly to focus_flamegraph).',
+            '"plateau" size), children, and nodeId (pass directly to focus_flamegraph).',
             '',
             'To find the most interesting plateau in user code:',
             '1. Follow the child with the highest total down from the thread node.',
@@ -119,16 +127,16 @@ const TOOLS = [
     },
     {
         name: 'focus_flamegraph',
-        description: 'Highlights a specific node in the flamegraph by its path key, zooming it into view for the user. The path key is the slash-separated hierarchy built from the call-stack tree returned by get_call_stacks: each node\'s pathKey is formed by joining ancestor scope fields with "/", e.g. "Process 123/Thread 456/outer_func/inner_func". If the exact key is not found, frames whose path contains the key text are still highlighted.',
+        description: 'Zooms the flame graph to a specific node, identified by the nodeId returned in the get_call_stacks response. Call get_call_stacks first to obtain valid node IDs.',
         inputSchema: {
             type: 'object',
             properties: {
-                key: {
-                    type: 'string',
-                    description: 'Path key of the flamegraph node to focus (e.g. "Process 123/Thread 456/my_function").',
+                nodeId: {
+                    type: 'number',
+                    description: 'The nodeId of the flame graph node to focus, as returned by get_call_stacks.',
                 },
             },
-            required: ['key'],
+            required: ['nodeId'],
             additionalProperties: false,
         },
     },
@@ -138,7 +146,7 @@ const TOOLS = [
 // Serialisation helpers
 // ---------------------------------------------------------------------------
 interface CallStackNode {
-    pathKey: string;
+    nodeId: number;
     scope: string | null;
     module: string | null;
     own: number;
@@ -146,15 +154,23 @@ interface CallStackNode {
     children: CallStackNode[];
 }
 
-function serializeCallStackNode(node: TopStats, depth: number, parentKey: string, threshold: number): CallStackNode {
-    const myKey = parentKey ? `${parentKey}/${node.scope ?? ''}` : (node.scope ?? '');
+function serializeCallStackNode(
+    node: TopStats,
+    depth: number,
+    parentHash: number,
+    threshold: number,
+    assignId: (frameKey: number) => number,
+): CallStackNode {
+    const scope = normalizeScope(node.scope ?? '');
+    const key = node.module ? `${node.module}:${scope}` : scope;
+    const myKey = hashPath(key, parentHash);
     const children = depth > 0
         ? [...node.callees.values()]
             .filter(child => child.total * 100 >= threshold)
-            .map(child => serializeCallStackNode(child, depth - 1, myKey, threshold))
+            .map(child => serializeCallStackNode(child, depth - 1, myKey, threshold, assignId))
         : [];
     return {
-        pathKey: myKey,
+        nodeId: assignId(myKey),
         scope: node.scope,
         module: node.module,
         own: parseFloat((node.own * 100).toFixed(2)),
@@ -170,6 +186,8 @@ export class AustinMcpServer {
     private _httpServer: http.Server | null = null;
     private _stats: AustinStats | null = null;
     private _actions: McpActions | null = null;
+    /** Maps nodeId → flamegraph frameKey (hash). Rebuilt on each get_call_stacks call. */
+    private _nodeIdMap: Map<number, number> = new Map();
 
     /** Registers callbacks for UI actions the MCP tools can trigger. */
     setActions(actions: McpActions): void {
@@ -303,7 +321,7 @@ export class AustinMcpServer {
             case 'get_gc_data':
                 return this._getGCData(args.limit as number | undefined);
             case 'focus_flamegraph':
-                return this._focusFlamegraph(args.key as string | undefined);
+                return this._focusFlamegraph(args.nodeId as number | undefined);
             case 'search_flamegraph':
                 return this._searchFlamegraph(args.term as string | undefined);
             default:
@@ -325,15 +343,19 @@ export class AustinMcpServer {
         return [{ type: 'text', text: `Loading profile from ${path}. The flamegraph view will update once parsing is complete.` }];
     }
 
-    private _focusFlamegraph(key?: string): Array<{ type: string; text: string }> {
-        if (!key) {
-            return [{ type: 'text', text: 'Missing required argument: key' }];
+    private _focusFlamegraph(nodeId?: number): Array<{ type: string; text: string }> {
+        if (nodeId === undefined) {
+            return [{ type: 'text', text: 'Missing required argument: nodeId' }];
+        }
+        const frameKey = this._nodeIdMap.get(nodeId);
+        if (frameKey === undefined) {
+            return [{ type: 'text', text: 'Unknown nodeId. Call get_call_stacks first to obtain valid node IDs.' }];
         }
         if (!this._actions) {
             return [{ type: 'text', text: 'Flamegraph focus is not available.' }];
         }
-        this._actions.focusFrame(key);
-        return [{ type: 'text', text: `Focused flamegraph node: ${key}` }];
+        this._actions.focusFrame(frameKey);
+        return [{ type: 'text', text: `Focused flamegraph node ${nodeId}.` }];
     }
 
     private _searchFlamegraph(term?: string): Array<{ type: string; text: string }> {
@@ -367,9 +389,16 @@ export class AustinMcpServer {
 
     private _getCallStacks(depth: number = 15, threshold: number = 0): Array<{ type: string; text: string }> {
         const stats = this._stats!;
+        this._nodeIdMap.clear();
+        let nextId = 0;
+        const assignId = (frameKey: number) => {
+            const id = nextId++;
+            this._nodeIdMap.set(id, frameKey);
+            return id;
+        };
         const tree = [...stats.callStack.callees.values()]
             .filter(n => n.total * 100 >= threshold)
-            .map(n => serializeCallStackNode(n, depth - 1, '', threshold));
+            .map(n => serializeCallStackNode(n, depth - 1, 0, threshold, assignId));
         return [{ type: 'text', text: JSON.stringify(tree, null, 2) }];
     }
 
