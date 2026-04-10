@@ -1,5 +1,8 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
 import * as http from 'http';
+import * as os from 'os';
+import * as path from 'path';
 import { Readable } from 'stream';
 import { AustinMcpServer } from '../../providers/mcp';
 import { AustinStats } from '../../model';
@@ -47,6 +50,13 @@ async function startedServer(stats: AustinStats): Promise<AustinMcpServer> {
     await server.start();
     server.update(stats);
     return server;
+}
+
+/** Creates a temp .austin file with the given content and returns its path. */
+function makeTmpAustinFile(content: string = 'P1;T1;/a.py:fn:1 100\n'): string {
+    const p = path.join(os.tmpdir(), `austin-mcp-test-${Math.random().toString(36).slice(2)}.austin`);
+    fs.writeFileSync(p, content);
+    return p;
 }
 
 /** Build stats with GC events directly (text parser strips GC frames). */
@@ -131,7 +141,7 @@ suite('AustinMcpServer', () => {
         assert.strictEqual(res, null);
     });
 
-    test('tools/list returns all four tools', async () => {
+    test('tools/list returns all tools', async () => {
         const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
         server = await startedServer(stats);
         const res = await post(server.port, { jsonrpc: '2.0', method: 'tools/list', id: 3 }) as Record<string, unknown>;
@@ -141,6 +151,9 @@ suite('AustinMcpServer', () => {
         assert.ok(names.includes('get_call_stacks'));
         assert.ok(names.includes('get_metadata'));
         assert.ok(names.includes('get_gc_data'));
+        assert.ok(names.includes('load_profile'));
+        assert.ok(names.includes('focus_flamegraph'));
+        assert.ok(names.includes('search_flamegraph'));
     });
 
     test('unknown method returns error -32601', async () => {
@@ -381,5 +394,295 @@ suite('AustinMcpServer', () => {
         const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
         const { frames } = JSON.parse(content[0].text) as { frames: unknown[] };
         assert.strictEqual(frames.length, 1);
+    });
+
+    // --- get_call_stacks pathKey --------------------------------------------
+
+    test('get_call_stacks nodes include pathKey', async () => {
+        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
+        server = await startedServer(stats);
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 19,
+            params: { name: 'get_call_stacks', arguments: {} },
+        }) as Record<string, unknown>;
+
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        type Node = { pathKey: string; children: Node[] };
+        const tree = JSON.parse(content[0].text) as Node[];
+        const processNode = tree[0];
+        assert.strictEqual(processNode.pathKey, 'Process 1');
+        const threadNode = processNode.children[0];
+        assert.ok(threadNode.pathKey.startsWith('Process 1/Thread '), 'thread pathKey should be nested under process');
+        const frameNode = threadNode.children[0];
+        assert.strictEqual(frameNode.pathKey, threadNode.pathKey + '/fn');
+    });
+
+    test('get_call_stacks pathKey is consistent across nested children', async () => {
+        const stats = await makeStats('P1;T1;/a.py:outer:1;/a.py:inner:2 100\n');
+        server = await startedServer(stats);
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 20,
+            params: { name: 'get_call_stacks', arguments: {} },
+        }) as Record<string, unknown>;
+
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        type Node = { pathKey: string; children: Node[] };
+        const tree = JSON.parse(content[0].text) as Node[];
+        const frameNode = tree[0].children[0].children[0];
+        const nestedNode = frameNode.children[0];
+        assert.ok(nestedNode.pathKey.startsWith(frameNode.pathKey + '/'), 'nested pathKey should extend parent');
+    });
+
+    // --- load_profile -------------------------------------------------------
+
+    test('load_profile bypasses the no-data guard', async () => {
+        const stats = new AustinStats(); // empty — overallTotal === 0
+        server = await startedServer(stats);
+        server.setActions({ loadFile: () => {}, focusFrame: () => {}, searchFrames: () => {} });
+        const tmpFile = makeTmpAustinFile();
+        try {
+            const res = await post(server.port, {
+                jsonrpc: '2.0', method: 'tools/call', id: 21,
+                params: { name: 'load_profile', arguments: { path: tmpFile } },
+            }) as Record<string, unknown>;
+            const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+            assert.ok(!content[0].text.includes('No profiling data'));
+        } finally {
+            fs.unlinkSync(tmpFile);
+        }
+    });
+
+    test('load_profile returns error for missing path argument', async () => {
+        const stats = new AustinStats();
+        server = await startedServer(stats);
+        server.setActions({ loadFile: () => {}, focusFrame: () => {}, searchFrames: () => {} });
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 22,
+            params: { name: 'load_profile', arguments: {} },
+        }) as Record<string, unknown>;
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        assert.ok(content[0].text.toLowerCase().includes('missing'));
+    });
+
+    test('load_profile returns error when file does not exist', async () => {
+        const stats = new AustinStats();
+        server = await startedServer(stats);
+        server.setActions({ loadFile: () => {}, focusFrame: () => {}, searchFrames: () => {} });
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 23,
+            params: { name: 'load_profile', arguments: { path: '/no/such/file.austin' } },
+        }) as Record<string, unknown>;
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        assert.ok(content[0].text.toLowerCase().includes('not found'));
+    });
+
+    test('load_profile invokes loadFile action with the given path', async () => {
+        const stats = new AustinStats();
+        server = await startedServer(stats);
+        const tmpFile = makeTmpAustinFile();
+        try {
+            let calledWith: string | null = null;
+            server.setActions({ loadFile: (p) => { calledWith = p; }, focusFrame: () => {}, searchFrames: () => {} });
+            await post(server.port, {
+                jsonrpc: '2.0', method: 'tools/call', id: 24,
+                params: { name: 'load_profile', arguments: { path: tmpFile } },
+            });
+            assert.strictEqual(calledWith, tmpFile);
+        } finally {
+            fs.unlinkSync(tmpFile);
+        }
+    });
+
+    test('load_profile returns not-available message when no actions are set', async () => {
+        const stats = new AustinStats();
+        server = await startedServer(stats);
+        // Deliberately do not call setActions
+        const tmpFile = makeTmpAustinFile();
+        try {
+            const res = await post(server.port, {
+                jsonrpc: '2.0', method: 'tools/call', id: 25,
+                params: { name: 'load_profile', arguments: { path: tmpFile } },
+            }) as Record<string, unknown>;
+            const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+            assert.ok(content[0].text.toLowerCase().includes('not available'));
+        } finally {
+            fs.unlinkSync(tmpFile);
+        }
+    });
+
+    // --- focus_flamegraph ---------------------------------------------------
+
+    test('focus_flamegraph hits no-data guard when no stats are loaded', async () => {
+        const stats = new AustinStats(); // empty
+        server = await startedServer(stats);
+        server.setActions({ loadFile: () => {}, focusFrame: () => {}, searchFrames: () => {} });
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 26,
+            params: { name: 'focus_flamegraph', arguments: { key: 'Process 1/Thread T1/fn' } },
+        }) as Record<string, unknown>;
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        assert.ok(content[0].text.includes('No profiling data'));
+    });
+
+    test('focus_flamegraph returns error for missing key argument', async () => {
+        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
+        server = await startedServer(stats);
+        server.setActions({ loadFile: () => {}, focusFrame: () => {}, searchFrames: () => {} });
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 27,
+            params: { name: 'focus_flamegraph', arguments: {} },
+        }) as Record<string, unknown>;
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        assert.ok(content[0].text.toLowerCase().includes('missing'));
+    });
+
+    test('focus_flamegraph invokes focusFrame action with the given key', async () => {
+        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
+        server = await startedServer(stats);
+        let calledWith: string | null = null;
+        server.setActions({ loadFile: () => {}, focusFrame: (k) => { calledWith = k; }, searchFrames: () => {} });
+        const key = 'Process 1/Thread T1/fn';
+        await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 28,
+            params: { name: 'focus_flamegraph', arguments: { key } },
+        });
+        assert.strictEqual(calledWith, key);
+    });
+
+    test('focus_flamegraph returns not-available message when no actions are set', async () => {
+        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
+        server = await startedServer(stats);
+        // Deliberately do not call setActions
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 29,
+            params: { name: 'focus_flamegraph', arguments: { key: 'Process 1/Thread T1/fn' } },
+        }) as Record<string, unknown>;
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        assert.ok(content[0].text.toLowerCase().includes('not available'));
+    });
+
+    // --- get_call_stacks threshold ------------------------------------------
+
+    test('get_call_stacks threshold filters out low-contribution branches', async () => {
+        // heavy: 99 samples (~99%), light: 1 sample (~1%)
+        const stats = await makeStats(
+            'P1;T1;/a.py:heavy:1 99\n' +
+            'P1;T1;/a.py:light:1 1\n'
+        );
+        server = await startedServer(stats);
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 30,
+            params: { name: 'get_call_stacks', arguments: { threshold: 2 } },
+        }) as Record<string, unknown>;
+
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        const text = content[0].text;
+        assert.ok(text.includes('heavy'), 'heavy (99%) should survive the threshold');
+        assert.ok(!text.includes('light'), 'light (1%) should be pruned by threshold=2');
+    });
+
+    test('get_call_stacks threshold=0 keeps everything', async () => {
+        const stats = await makeStats(
+            'P1;T1;/a.py:heavy:1 99\n' +
+            'P1;T1;/a.py:light:1 1\n'
+        );
+        server = await startedServer(stats);
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 31,
+            params: { name: 'get_call_stacks', arguments: { threshold: 0 } },
+        }) as Record<string, unknown>;
+
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        const text = content[0].text;
+        assert.ok(text.includes('heavy'));
+        assert.ok(text.includes('light'), 'light should be kept when threshold=0');
+    });
+
+    test('get_call_stacks threshold prunes entire subtree of a low-contribution node', async () => {
+        // outer calls inner; outer has 1% total — both should be pruned
+        const stats = await makeStats(
+            'P1;T1;/a.py:heavy:1 99\n' +
+            'P1;T1;/a.py:outer:1;/a.py:inner:2 1\n'
+        );
+        server = await startedServer(stats);
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 32,
+            params: { name: 'get_call_stacks', arguments: { threshold: 2 } },
+        }) as Record<string, unknown>;
+
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        const text = content[0].text;
+        assert.ok(!text.includes('outer'), 'outer (1%) should be pruned');
+        assert.ok(!text.includes('inner'), 'inner should be pruned as part of outer\'s subtree');
+    });
+
+    // --- get_call_stacks default depth --------------------------------------
+
+    test('get_call_stacks expands significantly deeper than the old default', async () => {
+        // Build a 20-frame deep stack
+        const frames = Array.from({ length: 20 }, (_, i) => `/a.py:f${i}:${i + 1}`).join(';');
+        const stats = await makeStats(`P1;T1;${frames} 100\n`);
+        server = await startedServer(stats);
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 30,
+            params: { name: 'get_call_stacks', arguments: {} },
+        }) as Record<string, unknown>;
+
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        const text = content[0].text;
+        // depth=15: serializeCallStackNode starts at depth-1=14, consuming 2 levels for
+        // process+thread, leaving 13 levels for frames → f0..f12 are visible.
+        assert.ok(text.includes('"f12"'), 'depth=15 should reach frame f12');
+        // The old depth=5 only reached f2; f12 proves the new default is much deeper.
+        assert.ok(!text.includes('"f13"'), 'f13 should be just beyond the default depth');
+    });
+
+    // --- search_flamegraph --------------------------------------------------
+
+    test('search_flamegraph hits no-data guard when no stats are loaded', async () => {
+        const stats = new AustinStats();
+        server = await startedServer(stats);
+        server.setActions({ loadFile: () => {}, focusFrame: () => {}, searchFrames: () => {} });
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 31,
+            params: { name: 'search_flamegraph', arguments: { term: 'fn' } },
+        }) as Record<string, unknown>;
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        assert.ok(content[0].text.includes('No profiling data'));
+    });
+
+    test('search_flamegraph returns error for missing term argument', async () => {
+        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
+        server = await startedServer(stats);
+        server.setActions({ loadFile: () => {}, focusFrame: () => {}, searchFrames: () => {} });
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 32,
+            params: { name: 'search_flamegraph', arguments: {} },
+        }) as Record<string, unknown>;
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        assert.ok(content[0].text.toLowerCase().includes('missing'));
+    });
+
+    test('search_flamegraph invokes searchFrames action with the given term', async () => {
+        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
+        server = await startedServer(stats);
+        let calledWith: string | null = null;
+        server.setActions({ loadFile: () => {}, focusFrame: () => {}, searchFrames: (t) => { calledWith = t; } });
+        await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 33,
+            params: { name: 'search_flamegraph', arguments: { term: 'my_func' } },
+        });
+        assert.strictEqual(calledWith, 'my_func');
+    });
+
+    test('search_flamegraph returns not-available message when no actions are set', async () => {
+        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
+        server = await startedServer(stats);
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 34,
+            params: { name: 'search_flamegraph', arguments: { term: 'fn' } },
+        }) as Record<string, unknown>;
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        assert.ok(content[0].text.toLowerCase().includes('not available'));
     });
 });

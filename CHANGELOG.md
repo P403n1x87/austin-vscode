@@ -1,5 +1,32 @@
 # Change Log
 
+## [1.3.0]
+
+### MCP enhancements
+
+- Added a `load_profile` MCP tool that lets an AI agent open a profile file by
+  path. The file is loaded and the flame graph view is revealed automatically,
+  so the agent can display profiling results to the user without any manual
+  interaction.
+
+- Added a `focus_flamegraph` MCP tool that lets an AI agent highlight and zoom
+  to a specific node in the flame graph, for AI-assisted flame graph
+  navigation.
+
+- Added a `search_flamegraph` MCP tool that highlights every frame whose
+  function name contains a given term across all threads and call chains.
+  Unlike `focus_flamegraph`, which zooms to a single node by exact path key,
+  this is useful for showing all occurrences of a function at once.
+
+- `get_call_stacks` increased the default expansion depth from 5 to 15 to reach
+  past framework boilerplate into user code, and accepts a `threshold` parameter
+  (in total%) to prune call-stack branches that contribute less than the given
+  percentage of total profiling time — keeping the response compact for large
+  profiles. The tool description now explains how to read `total` as flame graph
+  width and use `module` paths to identify user code versus third-party
+  libraries.
+
+
 ## [1.2.0]
 
 ### GC Activity
