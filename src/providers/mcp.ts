@@ -1,5 +1,12 @@
 import * as http from 'http';
+import { existsSync } from 'fs';
 import { AustinStats, TopStats } from '../model';
+
+export interface McpActions {
+    loadFile: (path: string) => void;
+    focusFrame: (pathKey: string) => void;
+    searchFrames: (term: string) => void;
+}
 
 const MCP_PROTOCOL_VERSION = '2024-11-05';
 const SERVER_NAME = 'austin-vscode';
@@ -25,13 +32,33 @@ const TOOLS = [
     },
     {
         name: 'get_call_stacks',
-        description: 'Returns the process→thread→function call-stack tree. Each node has scope, module, own%, total%, and children.',
+        description: [
+            'Returns the process→thread→function call-stack tree for flame graph analysis.',
+            'Each node has: scope (function name), module (source file path), own (fraction of',
+            'total profiling time spent directly in this function body), total (fraction spent in',
+            'this function and everything it calls — this is the flame graph width, i.e. the',
+            '"plateau" size), children, and pathKey (pass directly to focus_flamegraph).',
+            '',
+            'To find the most interesting plateau in user code:',
+            '1. Follow the child with the highest total down from the thread node.',
+            '2. Stop when own becomes significant (the function itself is doing real work) or',
+            '   when children fragment into many branches each with low total.',
+            '3. Prefer nodes whose module does not contain "site-packages" or "/lib/python"',
+            '   (those are third-party or stdlib frames — keep descending past them).',
+            '',
+            'Use a larger depth for framework-heavy code (Django, Flask, pytest, etc. add many',
+            'layers of library frames before reaching user code).',
+        ].join(' '),
         inputSchema: {
             type: 'object',
             properties: {
                 depth: {
                     type: 'number',
-                    description: 'Maximum tree depth to expand (default: 5).',
+                    description: 'Maximum tree depth to expand (default: 15). Increase for deeply nested or framework-heavy call stacks.',
+                },
+                threshold: {
+                    type: 'number',
+                    description: 'Minimum total% a node must account for to be included (default: 0 — no filtering). For example, 0.1 drops every call-stack branch that accounts for less than 0.1% of total profiling time, keeping the response compact for large profiles.',
                 },
             },
             additionalProperties: false,
@@ -60,12 +87,58 @@ const TOOLS = [
             additionalProperties: false,
         },
     },
+    {
+        name: 'search_flamegraph',
+        description: 'Highlights every flame graph frame whose function name contains the given term (case-sensitive substring match) and reveals the flame graph view. Unlike focus_flamegraph, which zooms to a single node by exact path key, this highlights all occurrences of a function across every thread and call chain. Use this to show the user all places a given function appears — for example after identifying a hot function via get_call_stacks.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                term: {
+                    type: 'string',
+                    description: 'Substring to match against function names in the flame graph.',
+                },
+            },
+            required: ['term'],
+            additionalProperties: false,
+        },
+    },
+    {
+        name: 'load_profile',
+        description: 'Loads an Austin profile file from the given path and opens it in the flamegraph view for the user to inspect. Call this after collecting profiling data with Austin to display the results. The file is loaded asynchronously; call get_metadata shortly after to confirm the data is available.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                path: {
+                    type: 'string',
+                    description: 'Absolute path to the Austin profile file (.austin, .aprof, or .mojo).',
+                },
+            },
+            required: ['path'],
+            additionalProperties: false,
+        },
+    },
+    {
+        name: 'focus_flamegraph',
+        description: 'Highlights a specific node in the flamegraph by its path key, zooming it into view for the user. The path key is the slash-separated hierarchy built from the call-stack tree returned by get_call_stacks: each node\'s pathKey is formed by joining ancestor scope fields with "/", e.g. "Process 123/Thread 456/outer_func/inner_func". If the exact key is not found, frames whose path contains the key text are still highlighted.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                key: {
+                    type: 'string',
+                    description: 'Path key of the flamegraph node to focus (e.g. "Process 123/Thread 456/my_function").',
+                },
+            },
+            required: ['key'],
+            additionalProperties: false,
+        },
+    },
 ];
 
 // ---------------------------------------------------------------------------
 // Serialisation helpers
 // ---------------------------------------------------------------------------
 interface CallStackNode {
+    pathKey: string;
     scope: string | null;
     module: string | null;
     own: number;
@@ -73,15 +146,20 @@ interface CallStackNode {
     children: CallStackNode[];
 }
 
-function serializeCallStackNode(node: TopStats, depth: number): CallStackNode {
+function serializeCallStackNode(node: TopStats, depth: number, parentKey: string, threshold: number): CallStackNode {
+    const myKey = parentKey ? `${parentKey}/${node.scope ?? ''}` : (node.scope ?? '');
+    const children = depth > 0
+        ? [...node.callees.values()]
+            .filter(child => child.total * 100 >= threshold)
+            .map(child => serializeCallStackNode(child, depth - 1, myKey, threshold))
+        : [];
     return {
+        pathKey: myKey,
         scope: node.scope,
         module: node.module,
         own: parseFloat((node.own * 100).toFixed(2)),
         total: parseFloat((node.total * 100).toFixed(2)),
-        children: depth > 0
-            ? [...node.callees.values()].map(child => serializeCallStackNode(child, depth - 1))
-            : [],
+        children,
     };
 }
 
@@ -91,6 +169,12 @@ function serializeCallStackNode(node: TopStats, depth: number): CallStackNode {
 export class AustinMcpServer {
     private _httpServer: http.Server | null = null;
     private _stats: AustinStats | null = null;
+    private _actions: McpActions | null = null;
+
+    /** Registers callbacks for UI actions the MCP tools can trigger. */
+    setActions(actions: McpActions): void {
+        this._actions = actions;
+    }
 
     /** Starts the server on an OS-assigned port. Resolves once the port is known. */
     start(): Promise<void> {
@@ -200,6 +284,11 @@ export class AustinMcpServer {
     }
 
     private _callTool(name: string, args: Record<string, unknown>): Array<{ type: string; text: string }> {
+        // These tools work regardless of whether profiling data is loaded.
+        if (name === 'load_profile') {
+            return this._loadProfile(args.path as string | undefined);
+        }
+
         if (!this._stats || this._stats.overallTotal === 0) {
             return [{ type: 'text', text: 'No profiling data available yet. Run a profiling session first.' }];
         }
@@ -208,14 +297,54 @@ export class AustinMcpServer {
             case 'get_top':
                 return this._getTop(args.limit as number | undefined);
             case 'get_call_stacks':
-                return this._getCallStacks(args.depth as number | undefined);
+                return this._getCallStacks(args.depth as number | undefined, args.threshold as number | undefined);
             case 'get_metadata':
                 return this._getMetadata();
             case 'get_gc_data':
                 return this._getGCData(args.limit as number | undefined);
+            case 'focus_flamegraph':
+                return this._focusFlamegraph(args.key as string | undefined);
+            case 'search_flamegraph':
+                return this._searchFlamegraph(args.term as string | undefined);
             default:
                 return [{ type: 'text', text: `Unknown tool: ${name}` }];
         }
+    }
+
+    private _loadProfile(path?: string): Array<{ type: string; text: string }> {
+        if (!path) {
+            return [{ type: 'text', text: 'Missing required argument: path' }];
+        }
+        if (!existsSync(path)) {
+            return [{ type: 'text', text: `File not found: ${path}` }];
+        }
+        if (!this._actions) {
+            return [{ type: 'text', text: 'Profile loading is not available.' }];
+        }
+        this._actions.loadFile(path);
+        return [{ type: 'text', text: `Loading profile from ${path}. The flamegraph view will update once parsing is complete.` }];
+    }
+
+    private _focusFlamegraph(key?: string): Array<{ type: string; text: string }> {
+        if (!key) {
+            return [{ type: 'text', text: 'Missing required argument: key' }];
+        }
+        if (!this._actions) {
+            return [{ type: 'text', text: 'Flamegraph focus is not available.' }];
+        }
+        this._actions.focusFrame(key);
+        return [{ type: 'text', text: `Focused flamegraph node: ${key}` }];
+    }
+
+    private _searchFlamegraph(term?: string): Array<{ type: string; text: string }> {
+        if (!term) {
+            return [{ type: 'text', text: 'Missing required argument: term' }];
+        }
+        if (!this._actions) {
+            return [{ type: 'text', text: 'Flamegraph search is not available.' }];
+        }
+        this._actions.searchFrames(term);
+        return [{ type: 'text', text: `Searching flamegraph for: ${term}` }];
     }
 
     private _getTop(limit?: number): Array<{ type: string; text: string }> {
@@ -236,9 +365,11 @@ export class AustinMcpServer {
         return [{ type: 'text', text: JSON.stringify(result, null, 2) }];
     }
 
-    private _getCallStacks(depth: number = 5): Array<{ type: string; text: string }> {
+    private _getCallStacks(depth: number = 15, threshold: number = 0): Array<{ type: string; text: string }> {
         const stats = this._stats!;
-        const tree = [...stats.callStack.callees.values()].map(n => serializeCallStackNode(n, depth - 1));
+        const tree = [...stats.callStack.callees.values()]
+            .filter(n => n.total * 100 >= threshold)
+            .map(n => serializeCallStackNode(n, depth - 1, '', threshold));
         return [{ type: 'text', text: JSON.stringify(tree, null, 2) }];
     }
 

@@ -87,6 +87,26 @@ export async function activate(context: vscode.ExtensionContext) {
 	callStackProvider.onFrameSelected((pathKey) => flameGraphViewProvider.focusFrame(pathKey));
 	gcTopProvider.onThreadSelected((threadKey) => flameGraphViewProvider.focusThread(threadKey));
 
+	mcpServer.setActions({
+		loadFile: (path) => {
+			try {
+				stats.readFromFile(path);
+			} catch (e) {
+				vscode.window.showErrorMessage(`Failed to load profile: ${(e instanceof Error) ? e.message : e}`);
+				return;
+			}
+			vscode.commands.executeCommand('austin-vscode.flame-graph.focus');
+		},
+		focusFrame: (pathKey) => {
+			flameGraphViewProvider.focusFrame(pathKey);
+			vscode.commands.executeCommand('austin-vscode.flame-graph.focus');
+		},
+		searchFrames: (term) => {
+			flameGraphViewProvider.search(term);
+			vscode.commands.executeCommand('austin-vscode.flame-graph.focus');
+		},
+	});
+
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(
 			FlameGraphViewProvider.viewType,
