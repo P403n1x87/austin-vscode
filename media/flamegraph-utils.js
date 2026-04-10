@@ -58,7 +58,8 @@
         if (!node.file) { return hslToHex(0, 10, 70); }
         const h = hash(node.file) % 360;
         const s = hash(node.name || '') % 10;
-        return hslToHex(h >= 0 ? h : -h, (node.file.endsWith('.py') ? 60 : 20) + s, 60);
+        const isPy = node.file.endsWith('.py') || (node.file.startsWith('<') && node.file.endsWith('>'));
+        return hslToHex(h >= 0 ? h : -h, (isPy ? 60 : 5) + s, isPy ? 60 : 45);
     }
 
     /** @param {string} text */

@@ -1,0 +1,54 @@
+/* Shared styles for the austin-vscode panel views (top, callstack, gctop). */
+
+* { box-sizing: border-box; }
+
+body {
+    padding: 0;
+    margin: 0;
+    font-size: var(--vscode-font-size, 12px);
+    font-family: var(--vscode-font-family, sans-serif);
+    color: var(--vscode-foreground);
+    background: transparent;
+}
+
+th.desc::after { content: " ▼"; font-size: 9px; }
+th.asc::after  { content: " ▲"; font-size: 9px; }
+
+.func { font-family: var(--vscode-editor-font-family, monospace); font-size: var(--vscode-editor-font-size, 1em); }
+
+.scope-name {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: var(--vscode-editor-font-size, 1em);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scope-module {
+    margin-left: 6px;
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+    white-space: nowrap;
+}
+
+tr.native-frame .scope-name,
+tr.native-frame .scope-module { opacity: 0.55; }
+
+.bar-row { display: flex; align-items: center; gap: 4px; }
+.bar-bg {
+    flex: 0 0 24px;
+    height: 5px;
+    background: var(--vscode-progressBar-background, rgba(128,128,128,0.2));
+    border-radius: 3px;
+    overflow: hidden;
+}
+.bar-fill { height: 5px; border-radius: 3px; background: var(--vscode-descriptionForeground); opacity: 0.4; }
+.bar-fill[style] { opacity: 1; }
+.pct {
+    width: 40px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-family: var(--vscode-editor-font-family, monospace);
+    flex-shrink: 0;
+    font-size: var(--vscode-editor-font-size, 1em);
+}

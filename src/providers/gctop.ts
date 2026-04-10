@@ -185,6 +185,9 @@ export class GCTopViewProvider implements vscode.WebviewViewProvider {
         const codiconsUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css')
         );
+        const viewsCssUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this._extensionUri, 'media', 'views.css')
+        );
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -192,17 +195,9 @@ export class GCTopViewProvider implements vscode.WebviewViewProvider {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" type="text/css" href="${codiconsUri}">
+    <link rel="stylesheet" type="text/css" href="${viewsCssUri}">
     <style>
-        * { box-sizing: border-box; }
-        body {
-            padding: 0;
-            margin: 0;
-            font-size: var(--vscode-font-size, 12px);
-            font-family: var(--vscode-font-family, sans-serif);
-            color: var(--vscode-foreground);
-            background: transparent;
-            overflow-x: hidden;
-        }
+        body { overflow-x: hidden; }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -224,8 +219,6 @@ export class GCTopViewProvider implements vscode.WebviewViewProvider {
         }
         th[data-col] { cursor: pointer; user-select: none; }
         th[data-col]:hover { background: var(--vscode-list-hoverBackground); }
-        th.desc::after { content: " ▼"; font-size: 9px; }
-        th.asc::after  { content: " ▲"; font-size: 9px; }
         td {
             padding: 3px 4px;
             border-bottom: 1px solid var(--vscode-list-inactiveSelectionBackground, rgba(128,128,128,0.1));
@@ -237,37 +230,6 @@ export class GCTopViewProvider implements vscode.WebviewViewProvider {
         .frame-row > td { cursor: pointer; }
         .frame-row:hover > td { background: var(--vscode-list-hoverBackground); }
         col.func { width: 100%; }
-        .bar-row { display: flex; align-items: center; gap: 4px; }
-        .bar-bg {
-            flex: 0 0 24px;
-            height: 5px;
-            background: var(--vscode-progressBar-background, rgba(128,128,128,0.2));
-            border-radius: 3px;
-            overflow: hidden;
-        }
-        .bar-fill { height: 5px; border-radius: 3px; background: var(--vscode-descriptionForeground); opacity: 0.4; }
-        .bar-fill[style] { opacity: 1; }
-        .pct {
-            width: 40px;
-            text-align: right;
-            font-variant-numeric: tabular-nums;
-            font-family: var(--vscode-editor-font-family, monospace);
-            flex-shrink: 0;
-            font-size: var(--vscode-editor-font-size, 1em);
-        }
-        .func { font-family: var(--vscode-editor-font-family, monospace); font-size: var(--vscode-editor-font-size, 1em); }
-        .scope-name {
-            font-family: var(--vscode-editor-font-family, monospace);
-            font-size: var(--vscode-editor-font-size, 1em);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .scope-module {
-            margin-left: 6px;
-            font-size: 0.85em;
-            color: var(--vscode-descriptionForeground);
-        }
         /* Thread summary section */
         #thread-summary {
             padding: 6px 8px 4px 8px;

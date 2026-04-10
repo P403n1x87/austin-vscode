@@ -111,6 +111,7 @@
         for (const item of filtered) {
             const tr = document.createElement('tr');
             tr.className = 'frame-row';
+            if (isNative(item.module)) { tr.classList.add('native-frame'); }
             if (item.module) { tr.title = item.module; }
             tr.innerHTML =
                 gcCell(item.gcOwn) +
@@ -140,6 +141,10 @@
             `<span class="scope-name">${esc(scope || '')}</span>` +
             (mod ? `<span class="scope-module">${esc(mod)}</span>` : '') +
             `</td>`;
+    }
+
+    function isNative(module) {
+        return !!module && !module.endsWith('.py') && !(module.startsWith('<') && module.endsWith('>'));
     }
 
     function statColor(value) {

@@ -154,6 +154,9 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         const codiconsUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this._extensionUri, 'media', 'codicons', 'codicon.css')
         );
+        const viewsCssUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this._extensionUri, 'media', 'views.css')
+        );
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -161,16 +164,8 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" type="text/css" href="${codiconsUri}">
+    <link rel="stylesheet" type="text/css" href="${viewsCssUri}">
     <style>
-        * { box-sizing: border-box; }
-        body {
-            padding: 0;
-            margin: 0;
-            font-size: var(--vscode-font-size, 12px);
-            font-family: var(--vscode-font-family, sans-serif);
-            color: var(--vscode-foreground);
-            background: transparent;
-        }
         .toolbar {
             display: flex;
             align-items: center;
@@ -238,8 +233,6 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         th.scope-header { text-align: left; }
         th.stat-header  { text-align: right; width: 64px; cursor: pointer; user-select: none; }
         th.stat-header:hover { background: var(--vscode-list-hoverBackground); }
-        th.desc::after { content: " ▼"; font-size: 9px; }
-        th.asc::after  { content: " ▲"; font-size: 9px; }
         td {
             padding: 2px 6px;
             border-bottom: 1px solid var(--vscode-list-inactiveSelectionBackground, rgba(128,128,128,0.1));
@@ -266,15 +259,6 @@ export class CallStackViewProvider implements vscode.WebviewViewProvider {
         }
         tr[data-open] .chevron { transform: rotate(90deg); }
         tr:not([data-expandable]) .chevron { visibility: hidden; }
-        .scope-name {
-            font-family: var(--vscode-editor-font-family, monospace);
-            font-size: var(--vscode-editor-font-size, 1em);
-        }
-        .scope-module {
-            margin-left: 6px;
-            font-size: 0.85em;
-            color: var(--vscode-descriptionForeground);
-        }
         /* stat cells */
         td.stat {
             text-align: right;
