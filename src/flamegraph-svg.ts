@@ -191,7 +191,7 @@ export function generateInteractiveSVG(hierarchy: any, mode: string, logoB64?: s
 
     return [
         `<svg xmlns="http://www.w3.org/2000/svg"`,
-        `     width="100%" height="${svgH}"`,
+        `     width="100%" viewBox="0 0 ${INIT_W} ${svgH}"`,
         `     style="background:${bgColor};font-family:system-ui,sans-serif;display:block">`,
         ``,
         `  <defs>`,
@@ -484,6 +484,9 @@ function buildEmbeddedScript(): string {
     window.addEventListener('resize', render);
 
     // ── Init ──────────────────────────────────────────────────────────────────
+    // Remove viewBox (used only for static/no-JS rendering) so the JS layout
+    // works in CSS-pixel coordinates matching the full container width.
+    svg.removeAttribute('viewBox');
     render();
 })();
 `;
