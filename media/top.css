@@ -1,0 +1,66 @@
+body { overflow-x: hidden; }
+
+table { width: 100%; border-collapse: collapse; table-layout: auto; }
+thead {
+    position: sticky;
+    top: var(--toolbar-h, 32px);
+    background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+    z-index: 1;
+}
+th {
+    text-align: left;
+    padding: 5px 6px;
+    border-bottom: 1px solid var(--vscode-panel-border, #444);
+    font-weight: 600;
+    font-size: 0.9em;
+    color: var(--vscode-foreground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+th[data-col] { cursor: pointer; user-select: none; }
+th[data-col]:hover { background: var(--vscode-list-hoverBackground); }
+td {
+    padding: 3px 4px;
+    border-bottom: 1px solid var(--vscode-list-inactiveSelectionBackground, rgba(128,128,128,0.1));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+col.func { width: 100%; }
+
+.top-row > td,
+.caller-row > td { cursor: pointer; }
+.top-row:hover > td,
+.caller-row:hover > td { background: var(--vscode-list-hoverBackground); }
+.top-row[data-expandable]:hover > td,
+.caller-row[data-expandable]:hover > td { background: var(--vscode-list-hoverBackground); }
+.top-row[data-open] > td {
+    background: var(--vscode-list-inactiveSelectionBackground, rgba(128,128,128,0.08));
+    border-bottom-color: transparent;
+    padding-bottom: 7px;
+}
+.caller-row > td {
+    font-size: 0.9em;
+    border-bottom-color: transparent;
+    background: rgba(128,128,128,0.14);
+}
+.caller-row:not([style*="none"]) + .top-row > td {
+    border-top: 2px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+}
+@keyframes callerExpandIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes callerCollapseOut {
+    from { opacity: 1; transform: translateY(0); }
+    to   { opacity: 0; transform: translateY(-4px); }
+}
+.caller-row.expanding  { animation: callerExpandIn   0.14s ease; }
+.caller-row.collapsing { animation: callerCollapseOut 0.11s ease forwards; }
+/* depth guide lines */
+.caller-row .func { border-left: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3)); font-size: 0.9em; }
+.caller-row .pct  { font-size: 0.85em; width: 36px; }
+
+.toolbar-btn { flex-shrink: 0; }

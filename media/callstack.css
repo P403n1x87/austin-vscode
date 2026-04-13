@@ -1,0 +1,68 @@
+/* Overrides and additions specific to the call stack view. */
+
+/* Toolbar: wider gap, muted colour, label/checkbox support */
+.toolbar { gap: 6px; font-size: 0.9em; color: var(--vscode-descriptionForeground); }
+.toolbar label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.toolbar input[type=checkbox] { cursor: pointer; accent-color: var(--vscode-focusBorder); }
+.toolbar-btn { margin-left: auto; }
+
+table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+thead {
+    position: sticky;
+    top: var(--toolbar-h, 32px);
+    background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+    z-index: 1;
+}
+th {
+    padding: 5px 6px;
+    border-bottom: 1px solid var(--vscode-panel-border, #444);
+    font-weight: 600;
+    font-size: 0.9em;
+    color: var(--vscode-foreground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+th.scope-header { text-align: left; }
+th.stat-header  { text-align: right; width: 64px; cursor: pointer; user-select: none; }
+th.stat-header:hover { background: var(--vscode-list-hoverBackground); }
+td {
+    padding: 2px 6px;
+    border-bottom: 1px solid var(--vscode-list-inactiveSelectionBackground, rgba(128,128,128,0.1));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    cursor: pointer;
+}
+tr:hover > td { background: var(--vscode-list-hoverBackground); }
+tr[data-open] > td { background: var(--vscode-list-inactiveSelectionBackground, rgba(128,128,128,0.08)); }
+tr[data-open]:hover > td { background: var(--vscode-list-hoverBackground); }
+
+.chevron {
+    display: inline-block;
+    width: 14px;
+    font-size: 8px;
+    color: var(--vscode-descriptionForeground);
+    transition: transform 0.12s ease;
+    user-select: none;
+    vertical-align: middle;
+}
+tr[data-open] .chevron { transform: rotate(90deg); }
+tr:not([data-expandable]) .chevron { visibility: hidden; }
+
+td.stat {
+    text-align: right;
+    width: 64px;
+    font-size: var(--vscode-editor-font-size, 1em);
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-variant-numeric: tabular-nums;
+    color: var(--vscode-foreground);
+}
+td.stat.zero { color: var(--vscode-descriptionForeground); }
+
+@keyframes focus-flash {
+    0%   { background: rgba(55,148,255,0.35) !important; }
+    100% { background: transparent; }
+}
+tr.focused > td { animation: focus-flash 1.4s ease-out forwards; }
