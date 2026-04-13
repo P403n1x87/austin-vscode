@@ -1,0 +1,65 @@
+body { overflow-x: hidden; }
+
+table { width: 100%; border-collapse: collapse; table-layout: auto; }
+thead {
+    position: sticky;
+    top: var(--toolbar-h, 32px);
+    background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+    z-index: 1;
+}
+th {
+    text-align: left;
+    padding: 5px 6px;
+    border-bottom: 1px solid var(--vscode-panel-border, #444);
+    font-weight: 600;
+    font-size: 0.9em;
+    white-space: nowrap;
+}
+th[data-col] { cursor: pointer; user-select: none; }
+th[data-col]:hover { background: var(--vscode-list-hoverBackground); }
+td {
+    padding: 3px 4px;
+    border-bottom: 1px solid var(--vscode-list-inactiveSelectionBackground, rgba(128,128,128,0.1));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+col.func { width: 100%; }
+.frame-row > td { cursor: pointer; }
+.frame-row:hover > td { background: var(--vscode-list-hoverBackground); }
+
+/* Thread summary */
+#thread-summary { padding: 6px 8px 4px 8px; border-bottom: 1px solid var(--vscode-panel-border, #444); }
+.thread-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 1px 2px;
+}
+.thread-row:hover { background: var(--vscode-list-hoverBackground); }
+.thread-label {
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+    flex-shrink: 0;
+    width: 110px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.thread-bar-bg { flex: 1; height: 6px; background: rgba(128,128,128,0.15); border-radius: 3px; overflow: hidden; }
+.thread-bar-fill { height: 6px; border-radius: 3px; background: var(--vscode-descriptionForeground); opacity: 0.4; }
+.thread-bar-fill[style] { opacity: 1; }
+.thread-pct {
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+    font-family: var(--vscode-editor-font-family, monospace);
+    flex-shrink: 0;
+    width: 38px;
+    text-align: right;
+}
+
+.toolbar-btn { flex-shrink: 0; }

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" type="text/css" href="{{codiconsUri}}">
+    <link rel="stylesheet" type="text/css" href="{{viewsCssUri}}">
+    <link rel="stylesheet" type="text/css" href="{{cssUri}}">
+</head>
+<body>
+    <div id="loading"><div class="spinner"></div></div>
+    <div class="toolbar">
+        <label>
+            <input type="checkbox" id="sync-toggle" checked>
+            Sync with flame graph
+        </label>
+        <button class="toolbar-btn" id="collapse-all" title="Collapse all">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                <rect x="2" y="2" width="12" height="1.5" rx="0.75"/>
+                <rect x="2" y="12.5" width="12" height="1.5" rx="0.75"/>
+                <path d="M8 4.5 L5 7.5 L8 7.5 L8 8.5 L5 8.5 L8 11.5 L11 8.5 L8 8.5 L8 7.5 L11 7.5 Z" opacity="0"/>
+                <path d="M5.5 5L8 7.5L10.5 5M5.5 11L8 8.5L10.5 11" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+        <span id="live-dot" title="Live session active"></span>
+    </div>
+    <div id="empty" class="empty">
+        <div>No profiling data loaded.</div>
+        <div class="empty-actions">
+            <button class="open-btn" id="open-btn">OPEN</button>
+            <button class="open-btn" id="attach-btn">ATTACH</button>
+        </div>
+    </div>
+    <table id="table" style="display:none">
+        <colgroup>
+            <col>
+            <col style="width:64px">
+            <col style="width:64px">
+        </colgroup>
+        <thead>
+            <tr>
+                <th class="scope-header">Scope</th>
+                <th class="stat-header desc" data-col="own">Own</th>
+                <th class="stat-header" data-col="total">Total</th>
+            </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+    </table>
+    <script src="{{scriptUri}}"></script>
+</body>
+</html>
