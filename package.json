@@ -172,6 +172,11 @@
         "title": "Toggle Austin GC Data Collection"
       },
       {
+        "command": "austin-vscode.austinSettings",
+        "title": "Austin VS Code Settings",
+        "category": "Austin"
+      },
+      {
         "command": "austin-vscode.generateMcpJson",
         "title": "Generate .mcp.json",
         "category": "Austin"
