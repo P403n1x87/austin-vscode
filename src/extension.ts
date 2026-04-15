@@ -249,18 +249,78 @@ export async function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	// ---- Interval selector ----
-	const austinIntervalStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+	// ---- Consolidated Austin settings status bar item ----
+	const austinSettingsStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+	austinSettingsStatusBarItem.command = "austin-vscode.austinSettings";
+	austinSettingsStatusBarItem.tooltip = "Austin profiler settings";
 
-	austinIntervalStatusBarItem.command = "austin-vscode.interval";
-	austinIntervalStatusBarItem.text = formatInterval(AustinRuntimeSettings.getInterval());
-	austinIntervalStatusBarItem.tooltip = "Austin sampling interval";
+	let currentMode = AustinRuntimeSettings.getMode();
+	let currentInterval = AustinRuntimeSettings.getInterval();
+	let childrenEnabled = AustinRuntimeSettings.getChildren();
+	let gcEnabled = AustinRuntimeSettings.getGC();
+
+	const modeIcons: Record<string, string> = {
+		[AustinMode.WallTime]: "$(clock)",
+		[AustinMode.CpuTime]: "$(server-process)",
+		[AustinMode.Memory]: "$(database)",
+	};
+
+	function updateAustinSettingsStatusBar() {
+		const icon = modeIcons[currentMode] ?? "$(clock)";
+		const interval = formatInterval(currentInterval);
+		const flags = [
+			...(childrenEnabled ? ["$(repo-forked)"] : []),
+			...(gcEnabled ? ["$(trash)"] : []),
+		];
+		const flagsSuffix = flags.length > 0 ? ` ${flags.join(" ")}` : "";
+		austinSettingsStatusBarItem.text = `Austin: ${icon} ${interval}${flagsSuffix}`;
+
+		const tooltip = new vscode.MarkdownString(undefined, true);
+		tooltip.isTrusted = true;
+		tooltip.appendMarkdown(`**Austin VS Code Settings**\n\n`);
+		tooltip.appendMarkdown(`| | |\n|---|---|\n`);
+		tooltip.appendMarkdown(`| Mode | [${currentMode}](command:austin-vscode.mode) |\n`);
+		tooltip.appendMarkdown(`| Interval | [${interval}](command:austin-vscode.interval) |\n`);
+		tooltip.appendMarkdown(`| Children | [Toggle](command:austin-vscode.toggleChildren) |\n`);
+		tooltip.appendMarkdown(`| GC | [Toggle](command:austin-vscode.toggleGC) |\n`);
+		austinSettingsStatusBarItem.tooltip = tooltip;
+	}
+	updateAustinSettingsStatusBar();
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand(austinIntervalStatusBarItem.command, () => {
-			// Show interval dialog
+		vscode.commands.registerCommand("austin-vscode.austinSettings", async () => {
+			const interval = formatInterval(currentInterval);
+
+			const items: vscode.QuickPickItem[] = [
+				{ label: `$(clock) Mode: ${currentMode}`, description: "Change sampling mode" },
+				{ label: `$(watch) Interval: ${interval}`, description: "Change sampling interval" },
+				{ label: `$(type-hierarchy-sub) Children: ${childrenEnabled ? "ON" : "OFF"}`, description: "Toggle child process profiling (-C)" },
+				{ label: `$(trash) GC: ${gcEnabled ? "ON" : "OFF"}`, description: "Toggle GC data collection (-g)" },
+			];
+
+			const selected = await vscode.window.showQuickPick(items, {
+				title: "Austin VS Code Settings",
+				placeHolder: "Select a setting to change",
+			});
+
+			if (!selected) { return; }
+
+			if (selected.label.includes("Mode:")) {
+				vscode.commands.executeCommand("austin-vscode.mode");
+			} else if (selected.label.includes("Interval:")) {
+				vscode.commands.executeCommand("austin-vscode.interval");
+			} else if (selected.label.includes("Children:")) {
+				vscode.commands.executeCommand("austin-vscode.toggleChildren");
+			} else if (selected.label.includes("GC:")) {
+				vscode.commands.executeCommand("austin-vscode.toggleGC");
+			}
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("austin-vscode.interval", () => {
 			vscode.window.showInputBox({
-				"value": AustinRuntimeSettings.getInterval().toString(),
+				"value": currentInterval.toString(),
 				"prompt": "Enter new Austin sampling interval",
 				"validateInput": (value) => {
 					if (isNaN(parseInt(value)) || !/^\d+$/.test(value)) { return "The interval must be an integer."; }
@@ -268,72 +328,16 @@ export async function activate(context: vscode.ExtensionContext) {
 			}).then((value) => {
 				if (value) {
 					const newInterval = parseInt(value);
+					currentInterval = newInterval;
 					AustinRuntimeSettings.setInterval(newInterval);
-					austinIntervalStatusBarItem.text = formatInterval(newInterval);
+					updateAustinSettingsStatusBar();
 				}
 			});
 		})
 	);
 
-
-	// ---- Children toggle ----
-	const childrenStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-	childrenStatusBarItem.command = "austin-vscode.toggleChildren";
-	childrenStatusBarItem.tooltip = "Toggle profiling of child processes (-C)";
-
-	let childrenEnabled = AustinRuntimeSettings.getChildren();
-
-	function updateChildrenStatusBar() {
-		childrenStatusBarItem.text = childrenEnabled
-			? "$(type-hierarchy-sub) Children: ON"
-			: "$(type-hierarchy-sub) Children: OFF";
-	}
-	updateChildrenStatusBar();
-
 	context.subscriptions.push(
-		vscode.commands.registerCommand("austin-vscode.toggleChildren", () => {
-			childrenEnabled = !childrenEnabled;
-			AustinRuntimeSettings.setChildren(childrenEnabled);
-			updateChildrenStatusBar();
-		})
-	);
-
-	childrenStatusBarItem.show();
-
-	// ---- GC toggle ----
-	const gcStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-	gcStatusBarItem.command = "austin-vscode.toggleGC";
-	gcStatusBarItem.tooltip = "Toggle GC data collection (-g)";
-
-	let gcEnabled = AustinRuntimeSettings.getGC();
-
-	function updateGCStatusBar() {
-		gcStatusBarItem.text = gcEnabled
-			? "$(trash) GC: ON"
-			: "$(trash) GC: OFF";
-	}
-	updateGCStatusBar();
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand("austin-vscode.toggleGC", () => {
-			gcEnabled = !gcEnabled;
-			AustinRuntimeSettings.setGC(gcEnabled);
-			updateGCStatusBar();
-		})
-	);
-
-	gcStatusBarItem.show();
-
-	// ---- Mode selector ----
-	const austinModeStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-
-	austinModeStatusBarItem.command = "austin-vscode.mode";
-	austinModeStatusBarItem.text = `$(clock) ${AustinRuntimeSettings.getMode()}`;
-	austinModeStatusBarItem.tooltip = "Austin sampling mode";
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand(austinModeStatusBarItem.command, () => {
-			// Show mode picker
+		vscode.commands.registerCommand("austin-vscode.mode", () => {
 			vscode.window.showQuickPick(
 				["Wall time", "CPU time", "Memory"],
 				{
@@ -342,15 +346,31 @@ export async function activate(context: vscode.ExtensionContext) {
 				}
 			).then((value) => {
 				if (value) {
-					AustinRuntimeSettings.setMode(value as AustinMode);
-					austinModeStatusBarItem.text = `$(clock) ${value}`;
+					currentMode = value as AustinMode;
+					AustinRuntimeSettings.setMode(currentMode);
+					updateAustinSettingsStatusBar();
 				}
 			});
 		})
 	);
 
-	austinModeStatusBarItem.show();
-	austinIntervalStatusBarItem.show();
+	context.subscriptions.push(
+		vscode.commands.registerCommand("austin-vscode.toggleChildren", () => {
+			childrenEnabled = !childrenEnabled;
+			AustinRuntimeSettings.setChildren(childrenEnabled);
+			updateAustinSettingsStatusBar();
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("austin-vscode.toggleGC", () => {
+			gcEnabled = !gcEnabled;
+			AustinRuntimeSettings.setGC(gcEnabled);
+			updateAustinSettingsStatusBar();
+		})
+	);
+
+	austinSettingsStatusBarItem.show();
 
 	// Detect austin on activation
 	(async () => {
