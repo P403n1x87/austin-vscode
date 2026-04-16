@@ -3,7 +3,7 @@ import * as assert from 'assert';
 // You can import and use all API from the 'vscode' module
 // as well as import your extension to test it
 import * as vscode from 'vscode';
-import { AustinRuntimeSettings, DEFAULT_INTERVAL, DEFAULT_MODE, DEFAULT_PATH } from '../../settings';
+import { AustinRuntimeSettings, DEFAULT_INTERVAL, DEFAULT_MODE, DEFAULT_PATH, DEFAULT_TOP_ROWS } from '../../settings';
 
 suite('Runtime SettingsTest Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
@@ -12,5 +12,10 @@ suite('Runtime SettingsTest Suite', () => {
 		assert.strictEqual(AustinRuntimeSettings.get().settings.path, DEFAULT_PATH);
 		assert.strictEqual(AustinRuntimeSettings.get().settings.interval, DEFAULT_INTERVAL);
 		assert.strictEqual(AustinRuntimeSettings.get().settings.mode, DEFAULT_MODE);
+		assert.strictEqual(AustinRuntimeSettings.get().settings.topRows, DEFAULT_TOP_ROWS);
+	});
+
+	test('getTopRows returns default', () => {
+		assert.strictEqual(AustinRuntimeSettings.getTopRows(), DEFAULT_TOP_ROWS);
 	});
 });

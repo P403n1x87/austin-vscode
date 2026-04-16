@@ -17,4 +17,5 @@ export class AustinSettings {
     lineStats: AustinLineStats = AustinLineStats.PERCENT;
     children: boolean = false;
     gc: boolean = false;
+    topRows: number = 50;
 }

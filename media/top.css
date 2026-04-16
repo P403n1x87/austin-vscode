@@ -64,3 +64,18 @@ col.func { width: 100%; }
 .caller-row .pct  { font-size: 0.85em; width: 36px; }
 
 .toolbar-btn { flex-shrink: 0; }
+
+.truncated {
+    padding: 8px 10px;
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground, rgba(204,204,204,0.7));
+    text-align: center;
+}
+.truncated a {
+    color: var(--vscode-textLink-foreground, #3794ff);
+    text-decoration: none;
+    cursor: pointer;
+}
+.truncated a:hover {
+    text-decoration: underline;
+}

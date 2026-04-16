@@ -2,6 +2,7 @@
     const vscode = acquireVsCodeApi();
 
     let data = [];
+    let totalCount = 0;
     let sortCol = 'own';
     let sortAsc = false;
     let filterTerm = '';
@@ -33,6 +34,7 @@
         } else if (message.top !== undefined) {
             loading.classList.remove('active');
             data = message.top;
+            totalCount = message.totalCount || data.length;
             const emptyEl = document.getElementById('empty');
             emptyEl.textContent = 'No profiling data loaded.';
             emptyEl.style.color = '';
@@ -92,6 +94,21 @@
         }
 
         restoreExpanded();
+
+        const truncatedEl = document.getElementById('truncated');
+        const dropped = totalCount - data.length;
+        if (dropped > 0) {
+            truncatedEl.innerHTML =
+                `Showing ${data.length} of ${totalCount} rows (${dropped} hidden). ` +
+                `<a href="#" id="open-settings-link">Change limit in settings</a>`;
+            truncatedEl.style.display = '';
+            document.getElementById('open-settings-link').addEventListener('click', e => {
+                e.preventDefault();
+                vscode.postMessage('openSettings');
+            });
+        } else {
+            truncatedEl.style.display = 'none';
+        }
     }
 
     function restoreExpanded() {

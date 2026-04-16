@@ -82,6 +82,12 @@
             "Both percent and absolute metric values"
           ],
           "default": "Percent"
+        },
+        "austin.topRows": {
+          "description": "Maximum number of rows to display in the Top view. Set to 0 for unlimited.",
+          "type": "number",
+          "default": 50,
+          "minimum": 0
         }
       }
     },
