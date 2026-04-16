@@ -1,4 +1,5 @@
 import { AustinStats, FrameObject } from "../model";
+import { demangle } from "./demangle";
 
 class IteratorDone extends Error {
     constructor() {
@@ -138,7 +139,7 @@ export class MojoParser {
             key: key,
             frame: {
                 module: filename,
-                scope: scope,
+                scope: demangle(scope),
                 line: Number(line),
                 lineEnd: Number(lineEnd),
                 column: Number(column),
@@ -150,7 +151,7 @@ export class MojoParser {
     private consumeKernel(): FrameObject {
         return {
             module: "kernel",
-            scope: this.consumeString(),
+            scope: demangle(this.consumeString()),
             line: 0,
         };
     }
@@ -362,15 +363,15 @@ export class StreamingMojoParser {
             columnEnd = this.consumeVarInt();
         }
         const filename = this.stringRefs.get(`${this.currentPid}:${filenameKey}`);
-        const scope = (scopeKey === 1n) ? "<unknown>" : this.stringRefs.get(`${this.currentPid}:${scopeKey}`);
-        if (filename === undefined || scope === undefined) {
+        const rawScope = (scopeKey === 1n) ? "<unknown>" : this.stringRefs.get(`${this.currentPid}:${scopeKey}`);
+        if (filename === undefined || rawScope === undefined) {
             throw new Error("Invalid string references in frame event");
         }
         return {
             key,
             frame: {
                 module: filename,
-                scope,
+                scope: demangle(rawScope),
                 line: Number(line),
                 lineEnd: Number(lineEnd),
                 column: Number(column),
@@ -439,7 +440,7 @@ export class StreamingMojoParser {
                 break;
             }
             case MOJO_EVENT.kernelFrame: {
-                const kf = { module: "kernel", scope: this.consumeString(), line: 0 };
+                const kf = { module: "kernel", scope: demangle(this.consumeString()), line: 0 };
                 if (!this.invalidFrame) { this.currentStack.push(kf); }
                 break;
             }

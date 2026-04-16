@@ -8,6 +8,7 @@ import { isAbsolute } from 'path';
 import { Readable } from 'stream';
 import { readHead } from './utils/io';
 import { MojoParser } from './utils/mojo';
+import { demangle } from './utils/demangle';
 
 
 export class AustinSample {
@@ -457,7 +458,7 @@ function parseFrame(frame: string): FrameObject {
     [module, scope, line] = frame.rsplit(":", 2);
 
     return {
-        scope: scope,
+        scope: demangle(scope),
         line: Number(line),
         module: absolutePath(module),
     };
