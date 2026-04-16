@@ -5,6 +5,7 @@ export const DEFAULT_PATH = "austin";
 export const DEFAULT_INTERVAL = 100;
 export const DEFAULT_MODE = AustinMode.WallTime;
 export const DEFAULT_LINE_STATS = AustinLineStats.PERCENT;
+export const DEFAULT_TOP_ROWS = 50;
 
 export class AustinRuntimeSettings {
     private static config = vscode.workspace.getConfiguration('austin');
@@ -22,6 +23,7 @@ export class AustinRuntimeSettings {
         const austinLineStats: AustinLineStats = AustinRuntimeSettings.config.get("lineStats", DEFAULT_LINE_STATS);
         const austinChildren: boolean = AustinRuntimeSettings.config.get("children", false);
         const austinGC: boolean = AustinRuntimeSettings.config.get("gc", false);
+        const austinTopRows: number = AustinRuntimeSettings.config.get("topRows", DEFAULT_TOP_ROWS);
 
         this.settings = {
             path: austinPath,
@@ -30,6 +32,7 @@ export class AustinRuntimeSettings {
             lineStats: austinLineStats,
             children: austinChildren,
             gc: austinGC,
+            topRows: austinTopRows,
         };
     }
 
@@ -85,6 +88,10 @@ export class AustinRuntimeSettings {
 
     public static setGC(gc: boolean) {
         AustinRuntimeSettings.config.update("gc", gc, vscode.ConfigurationTarget.Global);
+    }
+
+    public static getTopRows(): number {
+        return AustinRuntimeSettings.get().settings.topRows;
     }
 
 }

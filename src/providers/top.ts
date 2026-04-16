@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AustinStats, TopStats } from '../model';
+import { AustinRuntimeSettings } from '../settings';
 import { loadWebviewHtml } from '../utils/webviewHtml';
 
 interface CallerNode {
@@ -63,6 +64,10 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
             }
             if (data === 'attach') {
                 vscode.commands.executeCommand('austin-vscode.attach');
+                return;
+            }
+            if (data === 'openSettings') {
+                vscode.commands.executeCommand('workbench.action.openSettings', 'austin.topRows');
                 return;
             }
             if (data.module !== undefined) {
@@ -140,21 +145,24 @@ export class TopViewProvider implements vscode.WebviewViewProvider {
     }
 
     private _postData(stats: AustinStats) {
-        const top: TopItemData[] = [...stats.top.values()]
-            .sort((a, b) => b.own - a.own)
-            .map(s => {
-                const key = s.key();
-                return {
-                    key,
-                    scope: s.scope,
-                    module: s.module,
-                    own: s.own,
-                    total: s.total,
-                    line: s.minLine,
-                    callers: this._serializeCallers(s, new Set([key]), 3),
-                };
-            });
-        this._view!.webview.postMessage({ top });
+        const limit = AustinRuntimeSettings.getTopRows();
+        const sorted = [...stats.top.values()].sort((a, b) => b.own - a.own);
+        const totalCount = sorted.length;
+        const items = limit > 0 ? sorted.slice(0, limit) : sorted;
+
+        const top: TopItemData[] = items.map(s => {
+            const key = s.key();
+            return {
+                key,
+                scope: s.scope,
+                module: s.module,
+                own: s.own,
+                total: s.total,
+                line: s.minLine,
+                callers: this._serializeCallers(s, new Set([key]), 3),
+            };
+        });
+        this._view!.webview.postMessage({ top, totalCount });
     }
 
     private _getHtml(webview: vscode.Webview): string {
