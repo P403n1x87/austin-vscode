@@ -5,6 +5,7 @@ import { AustinController } from './controller';
 import { AustinStats } from './model';
 import { TopViewProvider } from './providers/top';
 import { GCTopViewProvider } from './providers/gctop';
+import { MetadataViewProvider } from './providers/metadata';
 import { CallStackViewProvider } from './providers/callstack';
 import { AustinProfileTaskProvider } from './providers/task';
 import { AustinRuntimeSettings } from './settings';
@@ -62,18 +63,22 @@ export async function activate(context: vscode.ExtensionContext) {
 	const topProvider = new TopViewProvider(context.extensionUri);
 	const callStackProvider = new CallStackViewProvider(context.extensionUri);
 	const gcTopProvider = new GCTopViewProvider(context.extensionUri);
+	const metadataProvider = new MetadataViewProvider(context.extensionUri);
 
 	stats.registerBeforeCallback(() => flameGraphViewProvider.showLoading());
 	stats.registerBeforeCallback(() => topProvider.showLoading());
 	stats.registerBeforeCallback(() => callStackProvider.showLoading());
+	stats.registerBeforeCallback(() => metadataProvider.showLoading());
 	stats.registerBeforeCallback(() => gcTopProvider.showLoading());
 	stats.registerAfterCallback((stats) => flameGraphViewProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => topProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => callStackProvider.refresh(stats));
+	stats.registerAfterCallback((stats) => metadataProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => gcTopProvider.refresh(stats));
 	stats.registerErrorCallback(() => flameGraphViewProvider.showError());
 	stats.registerErrorCallback(() => topProvider.showError());
 	stats.registerErrorCallback(() => callStackProvider.showError());
+	stats.registerErrorCallback(() => metadataProvider.showError());
 	stats.registerErrorCallback(() => gcTopProvider.showError());
 	stats.registerAfterCallback((stats) => {
 		const editor = vscode.window.activeTextEditor;
@@ -128,6 +133,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(GCTopViewProvider.viewType, gcTopProvider)
+	);
+
+	context.subscriptions.push(
+		vscode.window.registerWebviewViewProvider(MetadataViewProvider.viewType, metadataProvider)
 	);
 
 	context.subscriptions.push(
@@ -223,6 +232,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				topProvider.showLive();
 				callStackProvider.showLive();
 				gcTopProvider.showLive();
+				metadataProvider.showLive();
 			}
 		})
 	);
@@ -246,6 +256,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			topProvider.hideLive();
 			callStackProvider.hideLive();
 			gcTopProvider.hideLive();
+			metadataProvider.hideLive();
 		})
 	);
 

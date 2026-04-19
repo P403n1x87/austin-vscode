@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" type="text/css" href="{{codiconsUri}}">
+    <link rel="stylesheet" type="text/css" href="{{viewsCssUri}}">
+    <link rel="stylesheet" type="text/css" href="{{cssUri}}">
+</head>
+<body>
+    <div id="loading"><div class="spinner"></div></div>
+    <div id="empty" class="empty">
+        <div id="empty-msg">{{initMsg}}</div>
+        <div id="empty-actions" class="empty-actions" style="display:{{initActionsDisplay}}">
+            <button class="open-btn" id="open-btn">OPEN</button>
+            <button class="open-btn" id="attach-btn">ATTACH</button>
+        </div>
+    </div>
+    <div id="content" style="display:none">
+        <table id="table">
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+    <script src="{{scriptUri}}"></script>
+</body>
+</html>
