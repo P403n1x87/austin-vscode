@@ -284,6 +284,8 @@
     "lint": "eslint src",
     "test": "mocha",
     "test:vscode": "node ./out/test/runTest.js",
+    "note": "node scripts/new-changelog.js",
+    "changelog": "node scripts/collate-changelog.js",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
     "esbuild": "npm run esbuild-base -- --sourcemap",
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",

@@ -4,12 +4,17 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -20,12 +25,22 @@ jobs:
         run: npm install
 
       - name: Sync version from release tag
-        # Strips the leading 'v' from the tag (e.g. v1.2.3 -> 1.2.3) and updates
-        # package.json in the runner's working directory. The version in package.json
-        # is kept at 0.0.0 as a placeholder and is not committed back to the repo.
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           npm version "$VERSION" --no-git-tag-version
+
+      - name: Collate changelog fragments
+        id: changelog
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          npm run changelog "$VERSION" -- --delta /tmp/release-body.md
+
+      - name: Update release description
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "$GITHUB_REF_NAME" \
+            --notes-file /tmp/release-body.md
 
       - name: Publish to VS Code Marketplace
         run: npx @vscode/vsce publish --no-dependencies
