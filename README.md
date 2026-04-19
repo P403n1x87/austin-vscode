@@ -1,7 +1,5 @@
 # Austin VS Code Extension
 
-[![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/p403n1x87.austin-vscode.svg?style=flat-square&color=blue&logo=visual-studio)](https://marketplace.visualstudio.com/items?itemName=p403n1x87.austin-vscode)
-
 Profile and analyse your Python application inside VS Code using Austin.
 
 <p align="center">
