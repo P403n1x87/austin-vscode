@@ -1,0 +1,58 @@
+#table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+#table td {
+    padding: 4px 8px;
+    vertical-align: top;
+    border-bottom: 1px solid rgba(128,128,128,0.15);
+}
+
+#table td.meta-key {
+    width: 30%;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.9em;
+    text-transform: capitalize;
+}
+
+#table td.meta-value {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: var(--vscode-editor-font-size, 1em);
+    word-break: break-all;
+}
+
+.sampling-label {
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.85em;
+    margin-right: 2px;
+}
+
+.sampling-value {
+    margin-right: 8px;
+}
+
+.interval {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.interval-hz {
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.85em;
+}
+
+.fraction {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.fraction-detail {
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.85em;
+}

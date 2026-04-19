@@ -140,6 +140,12 @@
           "id": "austin-vscode.gctop",
           "name": "GC",
           "contextualTitle": "GC"
+        },
+        {
+          "type": "webview",
+          "id": "austin-vscode.metadata",
+          "name": "Metadata",
+          "contextualTitle": "Metadata"
         }
       ]
     },
