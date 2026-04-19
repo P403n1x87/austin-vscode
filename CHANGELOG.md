@@ -2,7 +2,7 @@
 
 ## [1.3.0]
 
-### MCP enhancements
+### MCP Server Changes
 
 - Added a `load_profile` MCP tool that lets an AI agent open a profile file by
   path. The file is loaded and the flame graph view is revealed automatically,
@@ -26,6 +26,19 @@
   width and use `module` paths to identify user code versus third-party
   libraries.
 
+### Other Improvements
+
+- The **Top** panel now caps the number of displayed entries with a configurable
+  limit (`austin.topEntryLimit`), improving responsiveness on large profiles.
+
+- Consolidated profiling configuration into a **single status bar item** for a
+  cleaner UI.
+
+- Improved the visual appearance of **native frames** across the flame graph,
+  call stacks, GC top, and top functions views.
+
+- Added the **Metadata** view to display the metadata entries from the loaded
+  profile.
 
 ## [1.2.0]
 
