@@ -6,10 +6,28 @@ import { AustinLineStats } from './types';
 
 let decorators: vscode.TextEditorDecorationType[] = [];
 
+// Files for which the user has explicitly requested decorations (by clicking a
+// flamegraph frame). Tab switches and live-profile refreshes only reapply
+// decorations for files in this set; editing any file clears it, so cleared
+// decorations don't silently reappear when switching tabs.
+const activeDecorationPaths = new Set<string>();
+
 
 export function clearDecorations() {
     decorators.forEach((ld) => ld.dispose());
     decorators = [];
+}
+
+export function activateDecorationsFor(path: string) {
+    activeDecorationPaths.add(path);
+}
+
+export function deactivateAllDecorations() {
+    activeDecorationPaths.clear();
+}
+
+export function hasActiveDecorations(path: string): boolean {
+    return activeDecorationPaths.has(path);
 }
 
 
