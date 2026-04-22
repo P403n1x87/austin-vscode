@@ -9,7 +9,7 @@ src/**
 .yarnrc
 vsc-extension-quickstart.md
 .mocharc.js
-CHANGELOG.md
+changelog/**
 eslint.config.js
 **/tsconfig.json
 **/.eslintrc.json
