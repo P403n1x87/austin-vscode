@@ -306,6 +306,117 @@ button {
     line-height: 1.5;
 }
 
+#minimap-panel {
+    position: fixed;
+    bottom: 34px;
+    right: 8px;
+    z-index: 20;
+    backdrop-filter: blur(12px);
+    background-color: rgba(24, 28, 32, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 5px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    padding: 3px 4px 4px 4px;
+    width: 240px;
+    max-width: calc(100% - 16px);
+    opacity: 0.9;
+    transition: opacity 0.15s;
+}
+
+#minimap-panel.snap-left {
+    right: auto;
+    left: 8px;
+}
+
+#minimap-panel.hidden {
+    display: none;
+}
+
+#minimap-panel:hover {
+    opacity: 1;
+}
+
+#minimap-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 14px;
+    margin-bottom: 2px;
+    padding: 0 2px;
+}
+
+#minimap-title {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: antiquewhite;
+    opacity: 0.7;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+#minimap-title kbd {
+    background: var(--vscode-keybindingLabel-background, rgba(255, 255, 255, 0.12));
+    border: 1px solid var(--vscode-keybindingLabel-border, rgba(255, 255, 255, 0.22));
+    border-bottom: 2px solid var(--vscode-keybindingLabel-bottomBorder, rgba(255, 255, 255, 0.32));
+    border-radius: 3px;
+    padding: 0 4px;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 9px;
+    line-height: 11px;
+    letter-spacing: 0;
+    color: antiquewhite;
+    text-transform: none;
+}
+
+#minimap-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.minimap-btn {
+    background: none !important;
+    border: none !important;
+    color: antiquewhite !important;
+    font-size: 11px;
+    line-height: 11px;
+    padding: 0 4px !important;
+    cursor: pointer;
+    opacity: 0.5;
+    font-weight: normal;
+}
+
+.minimap-btn:hover {
+    opacity: 1;
+}
+
+.minimap-btn.active {
+    opacity: 0.95;
+}
+
+#minimap-toggle {
+    font-size: 10px;
+    margin-left: 2px;
+}
+
+#minimap {
+    display: block;
+    width: 100%;
+    cursor: pointer;
+    border-radius: 2px;
+}
+
+#minimap-panel.collapsed #minimap {
+    display: none;
+}
+
+#minimap-panel.collapsed #minimap-header {
+    margin-bottom: 0;
+}
+
 #footer {
     backdrop-filter: blur(12px);
     background-color: rgba(46, 53, 58, 0.8);
