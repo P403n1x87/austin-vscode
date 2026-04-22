@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { clearDecorations, formatInterval, setLinesHeat } from './view';
+import { clearDecorations, deactivateAllDecorations, formatInterval, hasActiveDecorations, setLinesHeat } from './view';
 import { FlameGraphViewProvider } from './providers/flamegraph';
 import { AustinController } from './controller';
 import { AustinStats } from './model';
@@ -19,6 +19,7 @@ import { updateMcpJsonIfPresent, writeMcpJson } from './utils/mcpJson';
 export async function activate(context: vscode.ExtensionContext) {
 	vscode.workspace.onDidChangeTextDocument((_changeEvent) => {
 		clearDecorations();
+		deactivateAllDecorations();
 	});
 
 	const stats = new AustinStats();
@@ -44,8 +45,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.window.onDidChangeActiveTextEditor((editor) => {
 			if (editor?.document.uri.scheme === "file") {
-				const lines = stats.locationMap.get(editor.document.uri.fsPath);
-				if (lines) { setLinesHeat(lines, stats); }
+				const path = editor.document.uri.fsPath;
+				if (hasActiveDecorations(path)) {
+					const lines = stats.locationMap.get(path);
+					if (lines) { setLinesHeat(lines, stats); }
+					else { clearDecorations(); }
+				}
 				else { clearDecorations(); }
 			}
 		})
@@ -83,8 +88,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	stats.registerAfterCallback((stats) => {
 		const editor = vscode.window.activeTextEditor;
 		if (editor?.document.uri.scheme === "file") {
-			const lines = stats.locationMap.get(editor.document.uri.fsPath);
-			if (lines) { setLinesHeat(lines, stats); }
+			const path = editor.document.uri.fsPath;
+			if (hasActiveDecorations(path)) {
+				const lines = stats.locationMap.get(path);
+				if (lines) { setLinesHeat(lines, stats); }
+			}
 		}
 	});
 

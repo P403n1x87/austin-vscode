@@ -4,7 +4,7 @@ import { AustinProfileTaskProvider } from './providers/task';
 import { AustinRuntimeSettings } from './settings';
 import { isPythonExtensionAvailable } from './utils/pythonExtension';
 import { AustinVersionError, checkAustinVersion } from './utils/versionCheck';
-import { clearDecorations, setLinesHeat } from './view';
+import { activateDecorationsFor, clearDecorations, setLinesHeat } from './view';
 import psList = require('ps-list');
 
 
@@ -149,6 +149,7 @@ export class AustinController {
                 ));
                 const lines = this.stats.locationMap.get(module);
                 if (lines) {
+                    activateDecorationsFor(doc.uri.fsPath);
                     setLinesHeat(lines, this.stats);
                 }
             });
