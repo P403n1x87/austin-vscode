@@ -60,8 +60,10 @@
      * @param {any} zoomRoot
      * @param {number} cssWidth
      * @param {any[]} ancestors  nodes above zoomRoot, root-first
+     * @param {number} [cellH]   row height to use (defaults to global CELL_H)
      */
-    function layoutFrames(zoomRoot, cssWidth, ancestors) {
+    function layoutFrames(zoomRoot, cssWidth, ancestors, cellH) {
+        const rowH = cellH || CELL_H;
         /** @type {Array<{node:any,x:number,y:number,w:number,depth:number,color:string,highlighted:boolean,ancestor:boolean}>} */
         const frames = [];
         /** @type {Array<typeof frames>} */
@@ -70,7 +72,7 @@
         // Ancestors: full-width, dimmed context rows
         for (let i = 0; i < ancestors.length; i++) {
             while (rowIndex.length <= i) { rowIndex.push([]); }
-            const frame = { node: ancestors[i], x: 0, y: i * CELL_H, w: cssWidth,
+            const frame = { node: ancestors[i], x: 0, y: i * rowH, w: cssWidth,
                 depth: i, color: colorFor(ancestors[i]), highlighted: false, ancestor: true };
             frames.push(frame);
             rowIndex[i].push(frame);
@@ -83,7 +85,7 @@
             const { node, x, depth, w } = /** @type {any} */ (queue.shift());
 
             while (rowIndex.length <= depth) { rowIndex.push([]); }
-            const frame = { node, x, y: depth * CELL_H, w, depth, color: colorFor(node), highlighted: false, ancestor: false };
+            const frame = { node, x, y: depth * rowH, w, depth, color: colorFor(node), highlighted: false, ancestor: false };
             frames.push(frame);
             rowIndex[depth].push(frame);
 
@@ -224,9 +226,11 @@
      * @param {ReturnType<typeof layoutFrames>['rowIndex']} rowIndex
      * @param {number} cx  CSS px from canvas left
      * @param {number} cy  CSS px from canvas top
+     * @param {number} [cellH]  row height used for the layout (defaults to global CELL_H)
      */
-    function hitTest(rowIndex, cx, cy) {
-        const depth = Math.floor(cy / CELL_H);
+    function hitTest(rowIndex, cx, cy, cellH) {
+        const rowH = cellH || CELL_H;
+        const depth = Math.floor(cy / rowH);
         const row = rowIndex[depth];
         if (!row) { return null; }
         for (const f of row) {
@@ -297,6 +301,7 @@
 
         if (!animate || prevPos.size === 0) {
             render(canvas, ctx, frames, hoveredFrame, null, 1);
+            renderMinimap();
             return;
         }
 
@@ -309,6 +314,7 @@
             rafId = t < 1 ? requestAnimationFrame(step) : 0;
         }
         rafId = requestAnimationFrame(step);
+        renderMinimap();
     }
 
     function applySearch() {
@@ -361,12 +367,14 @@
         searchMode = mode || 'text';
         applySearch();
         render(canvas, ctx, frames, hoveredFrame, null, 1);
+        renderMinimap();
     }
 
     function clearSearch() {
         searchTerm = '';
         applySearch();
         render(canvas, ctx, frames, hoveredFrame, null, 1);
+        renderMinimap();
     }
 
     /** @param {any} node @param {number} frameKey @returns {any} */
@@ -463,6 +471,176 @@
             case 'memory': return [64,  192, 64];
             default:       return [192, 64,  64];  // cpu
         }
+    }
+
+    // ── Minimap ───────────────────────────────────────────────────────────────
+
+    const MINI_MAX_H       = 120;  // max CSS height of minimap canvas
+    const MINI_CELL_H_MAX  = 5;    // max row height in minimap
+    const MINI_CELL_H_MIN  = 2;    // min row height in minimap
+
+    const minimapPanel     = document.getElementById('minimap-panel');
+    const minimap          = /** @type {HTMLCanvasElement|null} */ (document.getElementById('minimap'));
+    const minimapToggle    = document.getElementById('minimap-toggle');
+    const minimapSnapLeft  = document.getElementById('minimap-snap-left');
+    const minimapSnapRight = document.getElementById('minimap-snap-right');
+    const minimapCtx       = minimap ? minimap.getContext('2d') : null;
+
+    let minimapCollapsed = false;
+    /** @type {'left'|'right'} */
+    let minimapSide = 'right';
+
+    function applyMinimapSide() {
+        if (!minimapPanel) { return; }
+        minimapPanel.classList.toggle('snap-left', minimapSide === 'left');
+        if (minimapSnapLeft)  { minimapSnapLeft.classList.toggle('active',  minimapSide === 'left'); }
+        if (minimapSnapRight) { minimapSnapRight.classList.toggle('active', minimapSide === 'right'); }
+    }
+
+    function applyMinimapCollapsed() {
+        if (!minimapPanel) { return; }
+        minimapPanel.classList.toggle('collapsed', minimapCollapsed);
+        if (minimapToggle) {
+            minimapToggle.textContent = minimapCollapsed ? '▴' : '▾';
+            minimapToggle.title = minimapCollapsed ? 'Expand minimap (M)' : 'Collapse minimap (M)';
+        }
+    }
+
+    function saveMinimapPrefs() {
+        const current = vscode.getState() || {};
+        vscode.setState(Object.assign({}, current, { minimapSide, minimapCollapsed }));
+    }
+    /** @type {{frames: ReturnType<typeof layoutFrames>['frames'], rowIndex: ReturnType<typeof layoutFrames>['rowIndex'], cellH: number, width: number, height: number} | null} */
+    let miniLayout = null;
+
+    /** Collect a node and all its descendants into a Set. @param {any} node */
+    function subtreeSet(node) {
+        const set = new Set();
+        /** @param {any} n */
+        function walk(n) { set.add(n); if (n.children) { for (const c of n.children) { walk(c); } } }
+        walk(node);
+        return set;
+    }
+
+    function renderMinimap() {
+        if (!minimapPanel || !minimap || !minimapCtx) { return; }
+
+        const shouldShow = !!(rootNode && zoomNode);
+        if (!shouldShow) {
+            minimapPanel.classList.add('hidden');
+            miniLayout = null;
+            return;
+        }
+        minimapPanel.classList.remove('hidden');
+        applyMinimapCollapsed();
+        if (minimapCollapsed) { miniLayout = null; return; }
+
+        const cssWidth = minimap.clientWidth || 232;
+
+        // Provisional layout at max cell height, then shrink if it overflows MINI_MAX_H
+        let cellH = MINI_CELL_H_MAX;
+        let layout = layoutFrames(rootNode, cssWidth, [], cellH);
+        let rowCount = layout.rowIndex.length;
+        let cssHeight = rowCount * cellH;
+        if (cssHeight > MINI_MAX_H) {
+            cellH = Math.max(MINI_CELL_H_MIN, Math.floor(MINI_MAX_H / rowCount));
+            layout = layoutFrames(rootNode, cssWidth, [], cellH);
+            rowCount = layout.rowIndex.length;
+            cssHeight = rowCount * cellH;
+        }
+
+        miniLayout = { frames: layout.frames, rowIndex: layout.rowIndex, cellH, width: cssWidth, height: cssHeight };
+
+        minimap.style.width  = cssWidth + 'px';
+        minimap.style.height = cssHeight + 'px';
+        minimap.width  = Math.round(cssWidth * DPR);
+        minimap.height = Math.round(cssHeight * DPR);
+
+        const ctx = minimapCtx;
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+        ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+        const subtree = zoomNode ? subtreeSet(zoomNode) : null;
+
+        /** @param {any} node */
+        function matchesSearch(node) {
+            if (!searchTerm) { return false; }
+            if (searchMode === 'path') { return node.frameKey === searchTerm; }
+            return (node.name || '').indexOf(searchTerm) !== -1 ||
+                !!(node.file && node.file.indexOf(searchTerm) !== -1);
+        }
+
+        for (const f of layout.frames) {
+            const dim = subtree ? !subtree.has(f.node) : false;
+            ctx.globalAlpha = dim ? 0.28 : 1;
+            ctx.fillStyle = f.color;
+            ctx.fillRect(f.x, f.y, f.w, cellH);
+
+            if (matchesSearch(f.node)) {
+                ctx.fillStyle = 'rgba(255,230,80,0.8)';
+                ctx.fillRect(f.x, f.y, f.w, cellH);
+            }
+        }
+        ctx.globalAlpha = 1;
+
+        // Bounding box around the zoomed subtree
+        if (zoomNode && subtree) {
+            let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+            for (const f of layout.frames) {
+                if (subtree.has(f.node)) {
+                    if (f.x < xMin) { xMin = f.x; }
+                    if (f.x + f.w > xMax) { xMax = f.x + f.w; }
+                    if (f.y < yMin) { yMin = f.y; }
+                    if (f.y + cellH > yMax) { yMax = f.y + cellH; }
+                }
+            }
+            if (xMin !== Infinity) {
+                const pad = 1;
+                const bx = Math.max(0, xMin - pad);
+                const by = Math.max(0, yMin - pad);
+                const bw = Math.min(cssWidth, xMax + pad) - bx;
+                const bh = Math.min(cssHeight, yMax + pad) - by;
+                ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+                ctx.lineWidth = 1.2;
+                ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+                ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+                ctx.lineWidth = 0.8;
+                ctx.strokeRect(bx - 0.5, by - 0.5, bw + 1, bh + 1);
+            }
+        }
+    }
+
+    if (minimap) {
+        minimap.addEventListener('click', e => {
+            if (!miniLayout) { return; }
+            const rect = minimap.getBoundingClientRect();
+            const f = hitTest(miniLayout.rowIndex, e.clientX - rect.left, e.clientY - rect.top, miniLayout.cellH);
+            if (f) { zoomTo(f.node); }
+        });
+    }
+    if (minimapToggle) {
+        minimapToggle.addEventListener('click', e => {
+            e.stopPropagation();
+            minimapCollapsed = !minimapCollapsed;
+            renderMinimap();
+            saveMinimapPrefs();
+        });
+    }
+    if (minimapSnapLeft) {
+        minimapSnapLeft.addEventListener('click', e => {
+            e.stopPropagation();
+            minimapSide = 'left';
+            applyMinimapSide();
+            saveMinimapPrefs();
+        });
+    }
+    if (minimapSnapRight) {
+        minimapSnapRight.addEventListener('click', e => {
+            e.stopPropagation();
+            minimapSide = 'right';
+            applyMinimapSide();
+            saveMinimapPrefs();
+        });
     }
 
     // ── GC Swimlanes ──────────────────────────────────────────────────────────
@@ -605,14 +783,20 @@
             setMetadata(msg.meta);
             loadData(msg.hierarchy);
             loadGCSpans(msg.gcSpans);
-            vscode.setState(msg);
+            vscode.setState(Object.assign({}, msg, { minimapSide, minimapCollapsed }));
         } else if (msg.hierarchy) {
             loadData(msg.hierarchy);
-            vscode.setState(msg);
+            vscode.setState(Object.assign({}, msg, { minimapSide, minimapCollapsed }));
         }
     });
 
     document.addEventListener('keydown', e => {
+        if (e.key === 'm' && zoomNode) {
+            minimapCollapsed = !minimapCollapsed;
+            renderMinimap();
+            saveMinimapPrefs();
+            return;
+        }
         vscode.postMessage({ event: 'keydown', name: e.key });
     });
 
@@ -627,10 +811,18 @@
     // Restore persisted state on webview reload
     const state = vscode.getState();
     if (state) {
+        if (state.minimapSide === 'left' || state.minimapSide === 'right') {
+            minimapSide = state.minimapSide;
+        }
+        if (typeof state.minimapCollapsed === 'boolean') {
+            minimapCollapsed = state.minimapCollapsed;
+        }
         setMetadata(state.meta);
         loadData(state.hierarchy);
         loadGCSpans(state.gcSpans);
     }
+    applyMinimapSide();
+    applyMinimapCollapsed();
 
     vscode.postMessage('initialized');
 

@@ -311,6 +311,17 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                         </details>
                     </div>
                 </div>
+                <div id="minimap-panel" class="hidden">
+                    <div id="minimap-header">
+                        <span id="minimap-title">Minimap <kbd>M</kbd></span>
+                        <div id="minimap-controls">
+                            <button id="minimap-snap-left" class="minimap-btn" title="Snap to left">⇤</button>
+                            <button id="minimap-snap-right" class="minimap-btn" title="Snap to right">⇥</button>
+                            <button id="minimap-toggle" class="minimap-btn" title="Collapse minimap (M)">▾</button>
+                        </div>
+                    </div>
+                    <canvas id="minimap"></canvas>
+                </div>
                 <div id="footer"></div>
 
                 <script type="text/javascript" src="${flameGraphUtilsUri}"></script>
