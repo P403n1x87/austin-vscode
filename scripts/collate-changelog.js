@@ -16,7 +16,7 @@ const fs = require("fs");
 const path = require("path");
 
 const CATEGORY_MAP = {
-  feat: "New Features",
+  feat: "What's New",
   fix: "Bug Fixes",
   perf: "Other Improvements",
 };
@@ -108,19 +108,39 @@ for (const file of fragmentFiles) {
   entries[cat].push(content);
 }
 
-// Build the new version section
-let section = `## [${version}]\n`;
-
-for (const cat of CATEGORY_ORDER) {
-  if (entries[cat].length === 0) continue;
-  section += `\n### ${CATEGORY_MAP[cat]}\n\n`;
-  for (const entry of entries[cat]) {
-    const lines = entry.split("\n");
-    const formatted = lines
-      .map((line, i) => (i === 0 && !line.startsWith("- ") ? `- ${line}` : line))
-      .join("\n");
-    section += `${formatted}\n\n`;
+// Wrap an entry as a markdown bullet: "- " for the first line, "  " for
+// continuation lines, with lines no longer than 79 characters total.
+function wrapBullet(entry) {
+  const MAX = 79;
+  const words = entry.replace(/^- /, "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "- ";
+  for (const word of words) {
+    const prefix = lines.length === 0 ? "- " : "  ";
+    if (line.length + (line === prefix ? 0 : 1) + word.length > MAX) {
+      lines.push(line);
+      line = `  ${word}`;
+    } else {
+      line += (line === prefix ? "" : " ") + word;
+    }
   }
+  if (line.trim()) lines.push(line);
+  return lines.join("\n");
+}
+
+// Build a section block with configurable heading level for categories.
+// headingLevel: 2 → "## Category", 3 → "### Category"
+function buildSection(headingLevel) {
+  const hashes = "#".repeat(headingLevel);
+  let out = "";
+  for (const cat of CATEGORY_ORDER) {
+    if (entries[cat].length === 0) continue;
+    out += `${hashes} ${CATEGORY_MAP[cat]}\n\n`;
+    for (const entry of entries[cat]) {
+      out += `${wrapBullet(entry)}\n\n`;
+    }
+  }
+  return out;
 }
 
 // Read the repo URL from package.json for the releases link
@@ -128,13 +148,15 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
 const repoUrl = (pkg.repository && pkg.repository.url) || pkg.repository || "";
 const releasesUrl = repoUrl.replace(/\.git$/, "") + "/releases";
 
-// Write CHANGELOG.md with just this release's notes and a link to full history
+// Write CHANGELOG.md: version heading, ### category sections, separator, link
+const changelogSection = buildSection(3);
 const changelog =
-  `# Change Log\n\n${section}` +
+  `# Change Log\n\n## [${version}]\n\n${changelogSection}` +
+  `----\n\n` +
   `For the full change log, see the [releases page](${releasesUrl}).\n`;
 fs.writeFileSync(changelogFile, changelog);
 
-// Write the new section to the delta file if requested
+// Write the delta: ## category sections, no version heading
 if (deltaFile) {
-  fs.writeFileSync(deltaFile, section.trim() + "\n");
+  fs.writeFileSync(deltaFile, buildSection(2).trimEnd() + "\n");
 }
