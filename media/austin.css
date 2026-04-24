@@ -189,6 +189,82 @@ button {
     background: rgba(255, 255, 255, 0.1) !important;
 }
 
+#native-toggle {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+    opacity: 0.75;
+}
+
+#native-toggle:not(.hidden) {
+    margin-left: auto;
+}
+
+/* When the native toggle is the right-cluster anchor, search-box sits
+   directly to its right without another auto margin creating a gap. */
+#native-toggle:not(.hidden) + #search-box {
+    margin-left: 6px;
+}
+
+#native-toggle:hover {
+    opacity: 1;
+}
+
+#native-toggle.hidden {
+    display: none;
+}
+
+#native-toggle-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+}
+
+.native-toggle-track {
+    position: relative;
+    display: inline-block;
+    width: 22px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 999px;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.native-toggle-thumb {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 8px;
+    height: 8px;
+    background: antiquewhite;
+    border-radius: 50%;
+    transition: transform 0.15s ease;
+}
+
+#native-toggle.active .native-toggle-track {
+    background: rgba(255, 255, 255, 0.45);
+    border-color: rgba(255, 255, 255, 0.6);
+}
+
+#native-toggle.active .native-toggle-thumb {
+    transform: translateX(10px);
+}
+
+.native-toggle-label {
+    color: antiquewhite;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 14px;
+}
+
 @keyframes austin-live-pulse {
 
     0%,

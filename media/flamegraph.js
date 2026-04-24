@@ -17,6 +17,42 @@
         }
     }
 
+    /** A frame node counts as native when it has a source file that isn't Python. @param {any} node */
+    function isNative(node) {
+        return !!(node.file && !node.file.endsWith('.py'));
+    }
+
+    /**
+     * Walk the subtree of a native node and return the first non-native
+     * descendants along each branch (stopping at the first Python frame).
+     * Used to skip over consecutive native frames when the collapse toggle
+     * is active.
+     * @param {any} nativeNode
+     * @returns {any[]}
+     */
+    function firstNonNativeDescendants(nativeNode) {
+        /** @type {any[]} */
+        const result = [];
+        if (!nativeNode.children) { return result; }
+        for (const child of nativeNode.children) {
+            if (isNative(child)) {
+                for (const d of firstNonNativeDescendants(child)) { result.push(d); }
+            } else {
+                result.push(child);
+            }
+        }
+        return result;
+    }
+
+    /** @param {any} node */
+    function hasAnyNativeFrame(node) {
+        if (isNative(node)) { return true; }
+        if (node.children) {
+            for (const c of node.children) { if (hasAnyNativeFrame(c)) { return true; } }
+        }
+        return false;
+    }
+
     // ── Constants ─────────────────────────────────────────────────────────────
 
     let CELL_H = 24;            // row height in CSS px — updated before each rebuild
@@ -24,6 +60,7 @@
     let FONT_FAMILY = 'system-ui, sans-serif';
     const LABEL_MIN_W = 30;     // minimum frame width (CSS px) to draw a text label
     const DPR = window.devicePixelRatio || 1;
+    const NATIVE_COLLAPSED_COLOR = '#6f6f6f';  // flat gray for collapsed native frames
 
     let currentMode = 'cpu';
 
@@ -57,43 +94,75 @@
      * Partition the hierarchy into a flat array of frame descriptors.
      * Ancestors of the zoom root are rendered at full width above it (dimmed).
      * All coordinates are in CSS pixels; the canvas buffer is DPR× larger.
+     * When `collapseNative` is true, each native frame is drawn as a single
+     * cell and its visible children are replaced with the first non-native
+     * descendants — preserving width (and thus metrics) while flattening
+     * native call chains. Consecutive native ancestors are also folded.
      * @param {any} zoomRoot
      * @param {number} cssWidth
      * @param {any[]} ancestors  nodes above zoomRoot, root-first
      * @param {number} [cellH]   row height to use (defaults to global CELL_H)
+     * @param {boolean} [collapseNative]
      */
-    function layoutFrames(zoomRoot, cssWidth, ancestors, cellH) {
+    function layoutFrames(zoomRoot, cssWidth, ancestors, cellH, collapseNative) {
         const rowH = cellH || CELL_H;
-        /** @type {Array<{node:any,x:number,y:number,w:number,depth:number,color:string,highlighted:boolean,ancestor:boolean}>} */
+        /** @type {Array<{node:any,x:number,y:number,w:number,depth:number,color:string,highlighted:boolean,ancestor:boolean,collapsedNative:boolean}>} */
         const frames = [];
         /** @type {Array<typeof frames>} */
         const rowIndex = [];
 
+        /** @param {any} n */
+        const displayChildren = (n) => {
+            if (collapseNative && isNative(n)) { return firstNonNativeDescendants(n); }
+            return n.children || [];
+        };
+
+        /** @param {any} n */
+        const colorFrame = (n) => {
+            if (collapseNative && isNative(n)) { return NATIVE_COLLAPSED_COLOR; }
+            return colorFor(n);
+        };
+
+        let effectiveAncestors = ancestors;
+        if (collapseNative && ancestors.length > 1) {
+            effectiveAncestors = [];
+            for (const a of ancestors) {
+                const prev = effectiveAncestors[effectiveAncestors.length - 1];
+                if (isNative(a) && prev && isNative(prev)) { continue; }
+                effectiveAncestors.push(a);
+            }
+        }
+
         // Ancestors: full-width, dimmed context rows
-        for (let i = 0; i < ancestors.length; i++) {
+        for (let i = 0; i < effectiveAncestors.length; i++) {
+            const a = effectiveAncestors[i];
             while (rowIndex.length <= i) { rowIndex.push([]); }
-            const frame = { node: ancestors[i], x: 0, y: i * rowH, w: cssWidth,
-                depth: i, color: colorFor(ancestors[i]), highlighted: false, ancestor: true };
+            const frame = { node: a, x: 0, y: i * rowH, w: cssWidth,
+                depth: i, color: colorFrame(a), highlighted: false, ancestor: true,
+                collapsedNative: !!(collapseNative && isNative(a)) };
             frames.push(frame);
             rowIndex[i].push(frame);
         }
 
         // Zoom root and its descendants
-        const offset = ancestors.length;
+        const offset = effectiveAncestors.length;
         const queue = [{ node: zoomRoot, x: 0, depth: offset, w: cssWidth }];
         while (queue.length) {
             const { node, x, depth, w } = /** @type {any} */ (queue.shift());
 
             while (rowIndex.length <= depth) { rowIndex.push([]); }
-            const frame = { node, x, y: depth * rowH, w, depth, color: colorFor(node), highlighted: false, ancestor: false };
+            const frame = { node, x, y: depth * rowH, w, depth, color: colorFrame(node),
+                highlighted: false, ancestor: false,
+                collapsedNative: !!(collapseNative && isNative(node)) };
             frames.push(frame);
             rowIndex[depth].push(frame);
 
-            if (!node.children || !node.children.length) { continue; }
+            const children = displayChildren(node);
+            if (!children.length) { continue; }
 
             const scale = w / node.value;
             let childX = x;
-            for (const child of node.children) {
+            for (const child of children) {
                 const childW = child.value * scale;
                 if (childW >= 1) {
                     queue.push({ node: child, x: childX, depth: depth + 1, w: childW });
@@ -142,8 +211,9 @@
             ctx.fillStyle = f.color;
             ctx.fillRect(x, y, w, CELL_H);
 
-            // Native (non-Python) frames get a diagonal hatch overlay
-            if (f.node.file && !f.node.file.endsWith('.py')) {
+            // Uncollapsed native (non-Python) frames get a diagonal hatch overlay;
+            // collapsed natives are drawn flat gray without the hatch.
+            if (!f.collapsedNative && f.node.file && !f.node.file.endsWith('.py')) {
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(x, y, w, CELL_H);
@@ -182,8 +252,8 @@
 
                 const cy = y + CELL_H / 2;
                 const labelAlpha = f.ancestor ? 0.6 : 0.9;
-                const funcName = f.node.name || '';
-                const file = f.node.file ? basename(f.node.file) : '';
+                const funcName = f.collapsedNative ? 'native' : (f.node.name || '');
+                const file = f.collapsedNative ? '' : (f.node.file ? basename(f.node.file) : '');
 
                 // Function name — prominent
                 ctx.font = primaryFont;
@@ -249,6 +319,8 @@
     let searchTerm = '';
     let searchMode = 'text'; // 'text' | 'path'
     let rafId = 0;
+    let collapseNative = false;
+    let hasNative = false;
 
     const ANIM_MS = 220;
 
@@ -286,7 +358,7 @@
         canvas.width = Math.round(cssWidth * DPR);
 
         const ancestors = zoomNode ? findAncestors(rootNode, zoomNode) : [];
-        const layout = layoutFrames(zoomRoot, cssWidth, ancestors);
+        const layout = layoutFrames(zoomRoot, cssWidth, ancestors, undefined, collapseNative);
         frames = layout.frames;
         rowIndex = layout.rowIndex;
 
@@ -338,6 +410,9 @@
         // Preserve zoom and search across live updates by re-finding the node
         const prevZoomKey = zoomNode ? zoomNode.frameKey : null;
         rootNode = hierarchy;
+        hasNative = hasAnyNativeFrame(rootNode);
+        if (!hasNative) { collapseNative = false; }
+        applyNativeToggle();
         hoveredFrame = null;
         if (prevZoomKey !== null && prevZoomKey !== undefined) {
             zoomNode = findByKey(rootNode, prevZoomKey) || null;
@@ -485,6 +560,8 @@
     const minimapSnapLeft  = document.getElementById('minimap-snap-left');
     const minimapSnapRight = document.getElementById('minimap-snap-right');
     const minimapCtx       = minimap ? minimap.getContext('2d') : null;
+    const nativeToggle      = document.getElementById('native-toggle');
+    const nativeToggleInput = /** @type {HTMLInputElement|null} */ (document.getElementById('native-toggle-input'));
 
     let minimapCollapsed = false;
     /** @type {'left'|'right'} */
@@ -506,9 +583,18 @@
         }
     }
 
-    function saveMinimapPrefs() {
+    function applyNativeToggle() {
+        if (!nativeToggle) { return; }
+        nativeToggle.classList.toggle('hidden', !hasNative);
+        // "Native" toggle ON means native frames are visible (uncollapsed).
+        nativeToggle.classList.toggle('active', !collapseNative);
+        nativeToggle.title = collapseNative ? 'Show native frames (N)' : 'Collapse native frames (N)';
+        if (nativeToggleInput) { nativeToggleInput.checked = !collapseNative; }
+    }
+
+    function savePrefs() {
         const current = vscode.getState() || {};
-        vscode.setState(Object.assign({}, current, { minimapSide, minimapCollapsed }));
+        vscode.setState(Object.assign({}, current, { minimapSide, minimapCollapsed, collapseNative }));
     }
     /** @type {{frames: ReturnType<typeof layoutFrames>['frames'], rowIndex: ReturnType<typeof layoutFrames>['rowIndex'], cellH: number, width: number, height: number} | null} */
     let miniLayout = null;
@@ -539,12 +625,12 @@
 
         // Provisional layout at max cell height, then shrink if it overflows MINI_MAX_H
         let cellH = MINI_CELL_H_MAX;
-        let layout = layoutFrames(rootNode, cssWidth, [], cellH);
+        let layout = layoutFrames(rootNode, cssWidth, [], cellH, collapseNative);
         let rowCount = layout.rowIndex.length;
         let cssHeight = rowCount * cellH;
         if (cssHeight > MINI_MAX_H) {
             cellH = Math.max(MINI_CELL_H_MIN, Math.floor(MINI_MAX_H / rowCount));
-            layout = layoutFrames(rootNode, cssWidth, [], cellH);
+            layout = layoutFrames(rootNode, cssWidth, [], cellH, collapseNative);
             rowCount = layout.rowIndex.length;
             cssHeight = rowCount * cellH;
         }
@@ -623,7 +709,7 @@
             e.stopPropagation();
             minimapCollapsed = !minimapCollapsed;
             renderMinimap();
-            saveMinimapPrefs();
+            savePrefs();
         });
     }
     if (minimapSnapLeft) {
@@ -631,7 +717,7 @@
             e.stopPropagation();
             minimapSide = 'left';
             applyMinimapSide();
-            saveMinimapPrefs();
+            savePrefs();
         });
     }
     if (minimapSnapRight) {
@@ -639,7 +725,19 @@
             e.stopPropagation();
             minimapSide = 'right';
             applyMinimapSide();
-            saveMinimapPrefs();
+            savePrefs();
+        });
+    }
+    if (nativeToggleInput) {
+        nativeToggleInput.addEventListener('change', () => {
+            if (!hasNative) {
+                nativeToggleInput.checked = true;
+                return;
+            }
+            collapseNative = !nativeToggleInput.checked;
+            applyNativeToggle();
+            rebuildAndRender(true);
+            savePrefs();
         });
     }
 
@@ -783,10 +881,10 @@
             setMetadata(msg.meta);
             loadData(msg.hierarchy);
             loadGCSpans(msg.gcSpans);
-            vscode.setState(Object.assign({}, msg, { minimapSide, minimapCollapsed }));
+            vscode.setState(Object.assign({}, msg, { minimapSide, minimapCollapsed, collapseNative }));
         } else if (msg.hierarchy) {
             loadData(msg.hierarchy);
-            vscode.setState(Object.assign({}, msg, { minimapSide, minimapCollapsed }));
+            vscode.setState(Object.assign({}, msg, { minimapSide, minimapCollapsed, collapseNative }));
         }
     });
 
@@ -794,7 +892,14 @@
         if (e.key === 'm' && zoomNode) {
             minimapCollapsed = !minimapCollapsed;
             renderMinimap();
-            saveMinimapPrefs();
+            savePrefs();
+            return;
+        }
+        if (e.key === 'n' && hasNative) {
+            collapseNative = !collapseNative;
+            applyNativeToggle();
+            rebuildAndRender(true);
+            savePrefs();
             return;
         }
         vscode.postMessage({ event: 'keydown', name: e.key });
@@ -817,12 +922,16 @@
         if (typeof state.minimapCollapsed === 'boolean') {
             minimapCollapsed = state.minimapCollapsed;
         }
+        if (typeof state.collapseNative === 'boolean') {
+            collapseNative = state.collapseNative;
+        }
         setMetadata(state.meta);
         loadData(state.hierarchy);
         loadGCSpans(state.gcSpans);
     }
     applyMinimapSide();
     applyMinimapCollapsed();
+    applyNativeToggle();
 
     vscode.postMessage('initialized');
 
