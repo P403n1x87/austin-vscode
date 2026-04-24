@@ -302,7 +302,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                 <link rel="stylesheet" type="text/css" href="${austinCssUri}">
             </head>
             <body class="logo">
-                <div id="header"><img id="austin-logo" class="${liveClass}" src="${austinLogoUri}" /><span class="vc" id="mode"></span><input id="search-box" type="text" placeholder="Search…" /><button id="header-share" onclick="onShare()">SHARE</button><button id="header-open" onclick="${btnOnclick}">${btnText}</button></div>
+                <div id="header"><img id="austin-logo" class="${liveClass}" src="${austinLogoUri}" /><span class="vc" id="mode"></span><label id="native-toggle" class="hidden active" title="Collapse native frames (N)"><input type="checkbox" id="native-toggle-input" checked /><span class="native-toggle-track"><span class="native-toggle-thumb"></span></span><span class="native-toggle-label">Native</span></label><input id="search-box" type="text" placeholder="Search…" /><button id="header-share" onclick="onShare()">SHARE</button><button id="header-open" onclick="${btnOnclick}">${btnText}</button></div>
                 <div id="chart">
                     <div id="gc-panel">
                         <details id="gc-details">
