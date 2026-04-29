@@ -261,14 +261,6 @@ export class AustinStats implements AustinStats {
         });
     }
 
-    private normalizeCallStackNode(node: TopStats): void {
-        node.own = node.rawOwn / this.overallTotal;
-        node.total = node.rawTotal / this.overallTotal;
-        for (const child of node.callees.values()) {
-            this.normalizeCallStackNode(child);
-        }
-    }
-
     private normalizeAll() {
         if (this.overallTotal === 0) { return; }
         const total = this.overallTotal;
@@ -279,8 +271,14 @@ export class AustinStats implements AustinStats {
                 s.callerContributions.set(k, v / total);
             }
         }
-        for (const child of this.callStack.callees.values()) {
-            this.normalizeCallStackNode(child);
+        const queue: TopStats[] = [...this.callStack.callees.values()];
+        while (queue.length > 0) {
+            const node = queue.pop()!;
+            node.own = node.rawOwn / total;
+            node.total = node.rawTotal / total;
+            for (const child of node.callees.values()) {
+                queue.push(child);
+            }
         }
     }
 

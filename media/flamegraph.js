@@ -926,7 +926,7 @@
             collapseNative = state.collapseNative;
         }
         setMetadata(state.meta);
-        loadData(state.hierarchy);
+        try { loadData(state.hierarchy); } catch (e) { vscode.setState(null); }
         loadGCSpans(state.gcSpans);
     }
     applyMinimapSide();
