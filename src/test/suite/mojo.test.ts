@@ -1,10 +1,10 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
-import { MojoParser } from '../../utils/mojo';
-import { AustinStats } from '../../model';
-import { testDataPath } from './helpers';
-import '../../stringExtension';
 import '../../mapExtension';
+import { AustinStats } from '../../model';
+import '../../stringExtension';
+import { MojoParser } from '../../utils/mojo';
+import { testDataPath } from './helpers';
 
 
 // ---------------------------------------------------------------------------
@@ -511,6 +511,99 @@ suite('MojoParser — multiple samples', () => {
         ];
         const stats = parseWith(bytes);
         assert.strictEqual(stats.overallTotal, 30);
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// v4 format — MOJO_STACK_REPEAT
+// ---------------------------------------------------------------------------
+suite('MojoParser — v4 MOJO_STACK_REPEAT', () => {
+
+    // Build a v4 stream with a Python frame and a native (non-.py) frame.
+    // Stream layout:
+    //   Sample 1: pid=1, tid="T1", frames=[/a.py:foo (Python), libfoo.so:bar (native)], time=100
+    //   Sample 2: pid=1, tid="T1", native tip=[libfoo.so:baz], STACK_REPEAT, time=50
+    //
+    // Expected: sample 2 stack = [/a.py:foo (Python base), REPEAT sentinel, libfoo.so:baz (new tip)]
+    function buildV4RepeatStream(): number[] {
+        return [
+            0x4D, 0x4F, 0x4A, vi(4),                       // MOJ v4
+
+            vi(1), ...str('mode'), ...str('wall'),           // metadata
+
+            // Sample 1: pid=1, iid=0, tid="T1"
+            vi(2), vi(1), vi(0), ...str('T1'),
+
+            // Strings
+            vi(11), vi(2), ...str('/a.py'),                  // key=2 → "/a.py"
+            vi(11), vi(3), ...str('foo'),                    // key=3 → "foo"
+            vi(11), vi(4), ...str('libfoo.so'),              // key=4 → "libfoo.so"
+            vi(11), vi(5), ...str('bar'),                    // key=5 → "bar"
+            vi(11), vi(6), ...str('baz'),                    // key=6 → "baz"
+
+            // frame: key=10, file=/a.py, scope=foo, line=1
+            vi(3), vi(10), vi(2), vi(3), vi(1), vi(0), vi(0), vi(0),
+            // frame: key=11, file=libfoo.so, scope=bar, line=0
+            vi(3), vi(11), vi(4), vi(5), vi(0), vi(0), vi(0), vi(0),
+
+            vi(5), vi(10),                                   // frameRef: /a.py:foo (Python, bottom)
+            vi(5), vi(11),                                   // frameRef: libfoo.so:bar (native, top)
+            vi(9), ...varIntBytes(100),                      // time: 100
+
+            // Sample 2: same thread — only new native tip + STACK_REPEAT
+            vi(2), vi(1), vi(0), ...str('T1'),
+
+            // frame: key=12, file=libfoo.so, scope=baz, line=0
+            vi(3), vi(12), vi(4), vi(6), vi(0), vi(0), vi(0), vi(0),
+
+            vi(5), vi(12),                                   // frameRef: libfoo.so:baz (new native tip)
+            vi(13),                                          // MOJO_EVENT.stackRepeat
+            vi(9), vi(50),                                   // time: 50
+        ];
+    }
+
+    test('STACK_REPEAT contributes metric to Python base frame', () => {
+        const stats = parseWith(buildV4RepeatStream());
+        assert.strictEqual(stats.overallTotal, 150);
+        // /a.py:foo appears in both samples (directly + via repeat)
+        const foo = stats.top.get('/a.py:foo')!;
+        assert.ok(foo, '/a.py:foo should appear in top');
+        assert.ok(Math.abs(foo.total - 1.0) < 1e-9, `foo.total should be 1.0, got ${foo.total}`);
+    });
+
+    test('STACK_REPEAT new native tip appears in second sample', () => {
+        const stats = parseWith(buildV4RepeatStream());
+        // libfoo.so:baz is the new native tip in sample 2
+        assert.ok(stats.top.has('libfoo.so:baz'), 'new native tip libfoo.so:baz should be in top');
+    });
+
+    test('STACK_REPEAT old native tip is not in second sample', () => {
+        const stats = parseWith(buildV4RepeatStream());
+        // libfoo.so:bar was the native top of sample 1; it must NOT appear in sample 2
+        // It should still be in top (from sample 1), but with only 100/150 of total
+        const bar = stats.top.get('libfoo.so:bar')!;
+        assert.ok(bar, 'libfoo.so:bar should still be in top from sample 1');
+        assert.ok(Math.abs(bar.total - 100 / 150) < 1e-9,
+            `bar.total should be ~${(100 / 150).toFixed(4)}, got ${bar.total}`);
+    });
+
+    test('STACK_REPEAT with no prior stack yields only the new native tip', () => {
+        // A repeat event on first ever sample for a thread — no previous stack to merge.
+        const bytes = [
+            0x4D, 0x4F, 0x4A, vi(4),
+            vi(1), ...str('mode'), ...str('wall'),
+            vi(2), vi(1), vi(0), ...str('T1'),
+            vi(11), vi(2), ...str('libfoo.so'),
+            vi(11), vi(3), ...str('fn'),
+            vi(3), vi(10), vi(2), vi(3), vi(0), vi(0), vi(0), vi(0),
+            vi(5), vi(10),                                   // new native tip
+            vi(13),                                          // STACK_REPEAT — no prior stack
+            vi(9), vi(30),
+        ];
+        const stats = parseWith(bytes);
+        assert.strictEqual(stats.overallTotal, 30);
+        assert.ok(stats.top.has('libfoo.so:fn'), 'native tip should still be recorded');
     });
 });
 

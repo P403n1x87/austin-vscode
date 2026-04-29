@@ -28,6 +28,7 @@ const MOJO_EVENT = Object.freeze({
     "memory": 10,
     "string": 11,
     "stringReference": 12,
+    "stackRepeat": 13,
 });
 
 interface FrameData {
@@ -38,6 +39,16 @@ interface FrameData {
 
 function specialFrame(label: string): FrameObject {
     return { scope: label, module: "", line: 0 };
+}
+
+function isPythonFrame(frame: FrameObject): boolean {
+    return frame.module.endsWith('.py') || (frame.module.startsWith('<') && frame.module.endsWith('>'));
+}
+
+function stripTopNativeFrames(stack: FrameObject[]): FrameObject[] {
+    let i = stack.length - 1;
+    while (i >= 0 && !isPythonFrame(stack[i])) { i--; }
+    return stack.slice(0, i + 1);
 }
 
 
@@ -197,8 +208,8 @@ export class MojoParser {
                                 Number(mode === "memory" ? currentMemoryMetric! : currentTimeMetric!),
                                 currentGC,
                             );
-                            // Save the current stack for back-attribution under the OLD key
-                            previousStacks.set(currentStackKey!, currentStack);
+                            // Save the current stack (without top native frames) for repeat/back-attribution
+                            previousStacks.set(currentStackKey!, stripTopNativeFrames(currentStack));
                         }
 
                         [currentPid, currentIid, currentTid] = this.consumeStack();
@@ -267,6 +278,10 @@ export class MojoParser {
                         stringRefs.set(`${currentPid}:${stringKey}`, stringValue);
                         break;
 
+                    case MOJO_EVENT.stackRepeat:
+                        currentStack = [...(previousStacks.get(currentStackKey!) ?? []), ...currentStack];
+                        break;
+
                     default:
                         throw new Error("Received unknown MOJO event");
                 }
@@ -311,7 +326,7 @@ export class StreamingMojoParser {
     private invalidFrame = false;
     private currentGC = false;
 
-    constructor(private readonly stats: AustinStats) {}
+    constructor(private readonly stats: AustinStats) { }
 
     private consume(): number {
         if (this.offset >= this.pending.length) {
@@ -404,7 +419,7 @@ export class StreamingMojoParser {
                         Number(this.mode === "memory" ? this.currentMemoryMetric! : this.currentTimeMetric!),
                         this.currentGC,
                     );
-                    this.previousStacks.set(this.currentStackKey!, this.currentStack);
+                    this.previousStacks.set(this.currentStackKey!, stripTopNativeFrames(this.currentStack));
                 }
                 this.currentPid = newPid;
                 this.currentIid = newIid;
@@ -461,6 +476,9 @@ export class StreamingMojoParser {
                 this.stringRefs.set(`${this.currentPid}:${k}`, v);
                 break;
             }
+            case MOJO_EVENT.stackRepeat:
+                this.currentStack = [...(this.previousStacks.get(this.currentStackKey!) ?? []), ...this.currentStack];
+                break;
             default:
                 throw new Error("Unknown MOJO event");
         }
