@@ -121,6 +121,27 @@ suite('MojoParser — error cases', () => {
             /unknown MOJO event/
         );
     });
+
+    test('throws on unsupported MOJO version', () => {
+        const bytes = [0x4D, 0x4F, 0x4A, vi(5)];  // MOJ v5
+        assert.throws(
+            () => new MojoParser(bytes.values() as IterableIterator<number>),
+            /Unsupported MOJO version: 5/
+        );
+    });
+
+    test('accepts all supported versions without throwing', () => {
+        // Versions 1–4 must all parse the header without a version error.
+        // We pass an otherwise-empty stream so the parser throws IteratorDone
+        // (caught internally) rather than an unsupported-version error.
+        for (const ver of [1, 2, 3, 4]) {
+            const bytes = [0x4D, 0x4F, 0x4A, vi(ver)];
+            assert.doesNotThrow(
+                () => new MojoParser(bytes.values() as IterableIterator<number>),
+                `version ${ver} should be accepted`
+            );
+        }
+    });
 });
 
 
