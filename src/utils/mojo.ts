@@ -13,6 +13,8 @@ function ord(c: string) {
 }
 
 
+const MOJO_VERSION = 4n;
+
 /* MOJO Events */
 
 const MOJO_EVENT = Object.freeze({
@@ -107,7 +109,11 @@ export class MojoParser {
         if (this.consume() !== ord('M') || this.consume() !== ord('O') || this.consume() !== ord('J')) {
             throw new Error("Invalid header");
         }
-        return this.consumeVarInt();
+        const version = this.consumeVarInt();
+        if (version > MOJO_VERSION) {
+            throw new Error(`Unsupported MOJO version: ${version}`);
+        }
+        return version;
     }
 
     private consumeMetadata() {
@@ -363,7 +369,11 @@ export class StreamingMojoParser {
         if (this.consume() !== ord('M') || this.consume() !== ord('O') || this.consume() !== ord('J')) {
             throw new Error("Invalid MOJO header");
         }
-        this.version = this.consumeVarInt();
+        const version = this.consumeVarInt();
+        if (version > MOJO_VERSION) {
+            throw new Error(`Unsupported MOJO version: ${version}`);
+        }
+        this.version = version;
     }
 
     private consumeFrame(): FrameData {

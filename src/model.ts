@@ -397,7 +397,13 @@ export class AustinStats implements AustinStats {
 
         this._beforeCbs.forEach(cb => cb());
 
-        new MojoParser(bytes).parseInto(this);
+        try {
+            new MojoParser(bytes).parseInto(this);
+        } catch (err) {
+            vscode.window.showErrorMessage(`Failed to parse MOJO profile: ${err instanceof Error ? err.message : err}`);
+            console.error(err);
+            return;
+        }
 
         this.finalize();
     }
