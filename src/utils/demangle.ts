@@ -653,9 +653,14 @@ function decodeRustEscapes(name: string): string {
 // symbols, the final segment has a numeric method-index counter that
 // must be stripped.
 
-const CYTHON_PREFIX_RE = /^__pyx_(?:pw|pf|f)_/;
+const CYTHON_PREFIX_RE = /^__pyx_(?:pw|pf|gb|f)_/;
+const CYTHON_FUSE_RE = /^__pyx_fuse_\d+/;
 
 function demangleCython(name: string): string | null {
+    // Fused-type specializations: strip the __pyx_fuse_N prefix, then fall through
+    const stripped = name.replace(CYTHON_FUSE_RE, '');
+    if (stripped !== name) { name = stripped; }
+
     const m = name.match(CYTHON_PREFIX_RE);
     if (!m) { return null; }
 
