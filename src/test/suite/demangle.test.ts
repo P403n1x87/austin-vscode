@@ -313,6 +313,27 @@ suite('demangle — Cython symbols', () => {
         );
     });
 
+    test('demangles __pyx_gb_ generator body', () => {
+        assert.strictEqual(
+            demangle('__pyx_gb_8bytecode_8concrete_16ConcreteBytecode_4generator'),
+            'bytecode.concrete.ConcreteBytecode.generator'
+        );
+    });
+
+    test('demangles __pyx_fuse_ specialization (wrapper)', () => {
+        assert.strictEqual(
+            demangle('__pyx_fuse_0__pyx_pw_11test_cython_13fused_func'),
+            'test_cython.fused_func'
+        );
+    });
+
+    test('demangles __pyx_fuse_ specialization (second type)', () => {
+        assert.strictEqual(
+            demangle('__pyx_fuse_1__pyx_pw_11test_cython_15fused_func'),
+            'test_cython.fused_func'
+        );
+    });
+
     test('returns non-pyx names unchanged', () => {
         assert.strictEqual(demangle('__pyx_tp_new_SomeType'), '__pyx_tp_new_SomeType');
     });
