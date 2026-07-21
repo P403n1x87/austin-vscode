@@ -4,6 +4,7 @@ art/**
 .github/**
 out/
 !out/extension.js
+!out/askpass/**
 src/**
 .gitignore
 .yarnrc
