@@ -1,4 +1,6 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
 import { findAskpass } from '../../providers/executor';
 
 // Side-effect imports required by model internals
@@ -55,6 +57,23 @@ suite('findAskpass', () => {
         if (result !== undefined) {
             assert.ok(result.length > 0);
             assert.ok(result.endsWith('.sh') || result.endsWith('askpass'));
+        }
+    });
+
+    test('bundled askpass scripts are reachable from the built output', () => {
+        // The esbuild bundle that ships to users puts __dirname at out/, while
+        // the tsc build used here puts it at out/providers/. findAskpass has to
+        // resolve the scripts in both layouts, or released builds silently lose
+        // their password helper and sudo has no way to prompt.
+        const outDir = path.resolve(__dirname, '..', '..');
+        for (const dir of [outDir, path.join(outDir, 'providers')]) {
+            const resolved = [dir, path.join(dir, '..')]
+                .map((d) => path.join(d, 'askpass', 'linux-askpass.sh'))
+                .find((p) => fs.existsSync(p));
+            assert.ok(
+                resolved !== undefined,
+                `askpass script not reachable with __dirname = ${dir}`
+            );
         }
     });
 
