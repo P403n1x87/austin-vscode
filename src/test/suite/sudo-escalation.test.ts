@@ -52,7 +52,15 @@ echo "no GUI password helper found" >&2
 exit 1
 `;
 
-suite('sudo authentication escalation', () => {
+suite('sudo authentication escalation', function () {
+
+    // sudo, and therefore the whole escalation, is POSIX-only: the extension
+    // never prefixes commands with sudo on Windows, and the fake below is a
+    // /bin/sh script that Windows cannot execute anyway.
+    if (process.platform === 'win32') {
+        test.skip('skipped on Windows: sudo is not used on this platform', () => { });
+        return;
+    }
 
     let tmpDir: string;
     let savedPath: string | undefined;

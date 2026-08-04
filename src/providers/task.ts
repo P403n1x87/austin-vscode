@@ -9,6 +9,22 @@ import { resolveVariable, resolveVariables } from "../utils/variableResolver";
 import { isAbsolute } from "path";
 import { platform } from "os";
 
+/**
+ * The command prefix needed to give Austin the privileges it requires, if any.
+ *
+ * Attaching to a running process needs elevation, and so does profiling on
+ * macOS. Windows has no sudo to elevate a child process with (and where
+ * sudo.exe does exist it is off by default), so nothing is prefixed there:
+ * Austin runs directly and reports itself if it lacks the privileges.
+ *
+ * @internal exported for testing
+ */
+export function sudoCommand(isAttach: boolean, os: string): string[] | undefined {
+  if (os === "win32") { return undefined; }
+  if (isAttach || os === "darwin") { return ["sudo"]; }
+  return undefined;
+}
+
 export class AustinProfileTaskProvider implements vscode.TaskProvider {
   private austinPromise: Thenable<vscode.Task[]> | undefined = undefined;
 
@@ -18,11 +34,7 @@ export class AustinProfileTaskProvider implements vscode.TaskProvider {
   ) { }
 
   private getSudoCommand(isAttach: boolean): string[] | undefined {
-    // Use sudo for attaching on both macOS and Linux, and for profiling on macOS
-    if (isAttach || platform() === "darwin") {
-      return ["sudo"];
-    }
-    return undefined;
+    return sudoCommand(isAttach, platform());
   }
 
   public provideTasks(): Thenable<vscode.Task[]> | undefined {
