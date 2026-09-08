@@ -11,34 +11,14 @@
     const CELL_H = 24, HEADER_H = 32, FOOTER_H = 28, LABEL_MIN_W = 30;
 
     // ── Utilities ─────────────────────────────────────────────────────────────
-    function hslToHex(h, s, l) {
-        l /= 100;
-        const a = s * Math.min(l, 1 - l) / 100;
-        const f = n => { const k = (n + h / 30) % 12; const c = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1); return Math.round(255 * c).toString(16).padStart(2, '0'); };
-        return '#' + f(0) + f(8) + f(4);
-    }
-    function nhash(t) { let h = 0; for (let i = 0; i < t.length; i++) { h = t.charCodeAt(i) + ((h << 5) - h); } return h; }
-    function colorFor(n) {
-        if (n.kind === 'process') { return hslToHex(120, nhash(n.name) % 20, 70); }
-        if (n.kind === 'thread')  { return hslToHex(240, nhash(n.name) % 20, 70); }
-        if (!n.file) { return hslToHex(0, 10, 70); }
-        const h = nhash(n.file) % 360;
-        const ip = n.file.endsWith('.py') || (n.file.startsWith('<') && n.file.endsWith('>'));
-        return hslToHex(h >= 0 ? h : -h, (ip ? 60 : 5) + nhash(n.name || '') % 10, ip ? 60 : 45);
-    }
-    function basename(p) { return p ? p.replace(/\\/g, '/').split('/').pop() || p : ''; }
-    function fmt(v) {
-        if (mode === 'memory') {
-            if (v < 1024)       { return v.toFixed(0) + ' B'; }
-            if (v < 1048576)    { return (v / 1024).toFixed(2) + ' KB'; }
-            if (v < 1073741824) { return (v / 1048576).toFixed(2) + ' MB'; }
-            return (v / 1073741824).toFixed(2) + ' GB';
-        }
-        if (v < 1000) { return v.toFixed(0) + ' \u03BCs'; }
-        if (v < 1e6)  { return (v / 1000).toFixed(2) + ' ms'; }
-        if (v < 1e9)  { return (v / 1e6).toFixed(2) + ' s'; }
-        return (v / 1e9).toFixed(2) + ' m';
-    }
+    // Loaded from flamegraph-utils.js, inlined ahead of this script by
+    // src/flamegraph-svg.ts's buildEmbeddedScript -- the same shared module
+    // the interactive webview and the Node-side SVG generator both use, so
+    // colors/formatting/layout stay identical across all three surfaces.
+    const {
+        colorFor, basename, formatValue: fmt, layoutFrames, groupAnchorsByPosition,
+        layoutTaskForest, flattenTaskForest, computeFloorY, LANE_GAP, isNative,
+    } = FlamegraphUtils;
 
     // ── Layout ────────────────────────────────────────────────────────────────
     function findAncestors(root, target) {
@@ -52,28 +32,38 @@
         return path;
     }
 
+    /**
+     * Main-tree layout plus every floating task tower reachable from
+     * zoomRoot, merged into one flat frame list -- mirrors
+     * media/flamegraph.js's rebuildAndRender. Returns the raw pixel height
+     * of the content area (task towers don't land on whole CELL_H rows).
+     */
     function doLayout(zoomRoot, w, ancestors) {
-        const frames = [];
-        let maxD = 0;
-        ancestors.forEach((a, i) => {
-            frames.push({ node: a, x: 0, y: i * CELL_H, w, depth: i, ancestor: true });
-            maxD = Math.max(maxD, i);
-        });
-        const q = [{ node: zoomRoot, x: 0, depth: ancestors.length, w }];
-        while (q.length) {
-            const { node, x, depth, w: fw } = q.shift();
-            frames.push({ node, x, y: depth * CELL_H, w: fw, depth, ancestor: false });
-            maxD = Math.max(maxD, depth);
-            if (!node.children || !node.children.length) { continue; }
-            const scale = fw / node.value;
-            let cx = x;
-            for (const child of node.children) {
-                const cw = child.value * scale;
-                if (cw >= 1) { q.push({ node: child, x: cx, depth: depth + 1, w: cw }); }
-                cx += cw;
-            }
+        const layout = layoutFrames(zoomRoot, w, ancestors, CELL_H);
+        const mainFrames = layout.frames;
+        const mainHeight = layout.rowIndex.length * CELL_H;
+
+        const globalScale = TOTAL > 0 ? w / TOTAL : 0;
+        const anchorGroups = groupAnchorsByPosition(layout.anchors);
+
+        const taskFrames = [];
+        let height = mainHeight;
+        for (const group of anchorGroups.values()) {
+            const anchor = group[0];
+            const forest = layoutTaskForest(group, globalScale, CELL_H);
+            if (!forest.towers.length) { continue; }
+
+            const groupWidth = Math.max.apply(null, forest.towers.map(t => t.offsetX + t.tower.width));
+            const floorY = computeFloorY(
+                layout.rowIndex, anchor.anchorX, anchor.anchorX + groupWidth, CELL_H, anchor.anchorY + CELL_H
+            ) + LANE_GAP;
+
+            const flattened = flattenTaskForest(forest, 0, 0, anchor.anchorX, floorY, CELL_H);
+            for (const f of flattened.frames) { taskFrames.push(f); }
+            height = Math.max(height, floorY + forest.totalHeight);
         }
-        return { frames, rows: maxD + 1 };
+
+        return { frames: mainFrames.concat(taskFrames), height };
     }
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -85,8 +75,8 @@
     function render() {
         const w = svg.getBoundingClientRect().width || 1200;
         const ancestors = zoomNode ? findAncestors(hierarchy, zoomNode) : [];
-        const { frames, rows } = doLayout(zoomNode || hierarchy, w, ancestors);
-        const totalH = HEADER_H + rows * CELL_H + FOOTER_H;
+        const { frames, height } = doLayout(zoomNode || hierarchy, w, ancestors);
+        const totalH = HEADER_H + height + FOOTER_H;
 
         svg.setAttribute('height', totalH);
 
@@ -185,11 +175,11 @@
             const node = nodeMap.get(+this.getAttribute('data-id'));
             if (!node) { return; }
             const pct  = (node.value / TOTAL * 100).toFixed(2) + '%';
-            const icon = mode === 'memory' ? '\u{1F4E6}\uFE0E' : '\u23F1\uFE0E';
+            const icon = mode === 'memory' ? '\u{1F4E6}︎' : '⏱︎';
             const ft   = document.getElementById('footer-text');
             if (ft) {
-                ft.textContent = icon + ' ' + fmt(node.value) + ' (' + pct + ')' +
-                    '  \u00B7  ' + (node.name || '') +
+                ft.textContent = icon + ' ' + fmt(node.value, mode) + ' (' + pct + ')' +
+                    '  ·  ' + (node.name || '') +
                     (node.file ? '  ' + basename(node.file) : '');
             }
         });
