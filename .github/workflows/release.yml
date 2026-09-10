@@ -42,12 +42,20 @@ jobs:
           gh release edit "$GITHUB_REF_NAME" \
             --notes-file /tmp/release-body.md
 
+      - name: Package extension
+        run: npx @vscode/vsce package --no-dependencies
+
       - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish --no-dependencies
+        run: npx @vscode/vsce publish --packagePath *.vsix
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       - name: Publish to Open VSX
-        run: npx ovsx publish --no-dependencies
+        run: npx ovsx publish *.vsix
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+      - name: Attach extension to GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" *.vsix
