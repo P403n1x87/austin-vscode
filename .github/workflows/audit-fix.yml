@@ -1,0 +1,37 @@
+name: Audit Fix
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  audit-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run npm audit fix
+        run: npm audit fix || true
+
+      - name: Open pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: audit fix"
+          title: "chore: audit fix"
+          body: Automated update of transitive dependencies to resolve `npm audit` findings.
+          branch: chore/audit-fix-auto
+          delete-branch: true
