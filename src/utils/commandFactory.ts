@@ -47,6 +47,8 @@ export function getAustinCommand(
         _args.push(getConfiguredInterpreter());
         _args.push(pythonFile);
         if (pythonArgs) { _args = _args.concat(pythonArgs); }
+    } else if (pythonArgs) {
+        _args = _args.concat(pythonArgs);
     }
 
     return {

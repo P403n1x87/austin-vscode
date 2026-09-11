@@ -100,3 +100,26 @@ suite('getAustinCommand — pid support', () => {
         assert.strictEqual(envFile, '/path/to/.env');
     });
 });
+
+
+// ---------------------------------------------------------------------------
+// getAustinCommand — command + args without a file
+// ---------------------------------------------------------------------------
+suite('getAustinCommand — command + args without a file', () => {
+
+    test('appends pythonArgs after austin flags even when pythonFile is unset', () => {
+        const { cmd, args } = getAustinCommand(
+            undefined,
+            ['poetry', 'run'],
+            ['python', '-m', 'pytest', '-k', 'test_foo'],
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+        );
+        assert.strictEqual(cmd, 'poetry');
+        assert.deepStrictEqual(args.slice(0, 2), ['run', 'austin']);
+        assert.deepStrictEqual(args.slice(-5), ['python', '-m', 'pytest', '-k', 'test_foo']);
+    });
+});
