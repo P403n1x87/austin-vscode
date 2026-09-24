@@ -276,6 +276,7 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                     "meta": { "mode": stats.metadata.get("mode") },
                     "hierarchy": stats.hierarchy,
                     "gcSpans": computeGCSpans(stats),
+                    "taskTraces": stats.getTaskTraces(),
                 });
             }
         }
@@ -308,6 +309,12 @@ export class FlameGraphViewProvider implements vscode.WebviewViewProvider {
                         <details id="gc-details">
                             <summary id="gc-summary">GC Activity</summary>
                             <div id="gc-swimlanes"></div>
+                        </details>
+                    </div>
+                    <div id="task-panel">
+                        <details id="task-details">
+                            <summary id="task-summary">Task Trace</summary>
+                            <div id="task-swimlanes"></div>
                         </details>
                     </div>
                 </div>

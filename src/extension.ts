@@ -7,6 +7,7 @@ import { TopViewProvider } from './providers/top';
 import { GCTopViewProvider } from './providers/gctop';
 import { MetadataViewProvider } from './providers/metadata';
 import { CallStackViewProvider } from './providers/callstack';
+import { TasksViewProvider } from './providers/tasksView';
 import { AustinProfileTaskProvider } from './providers/task';
 import { AustinRuntimeSettings } from './settings';
 import { AustinMode } from './types';
@@ -69,22 +70,26 @@ export async function activate(context: vscode.ExtensionContext) {
 	const callStackProvider = new CallStackViewProvider(context.extensionUri);
 	const gcTopProvider = new GCTopViewProvider(context.extensionUri);
 	const metadataProvider = new MetadataViewProvider(context.extensionUri);
+	const tasksProvider = new TasksViewProvider(context.extensionUri);
 
 	stats.registerBeforeCallback(() => flameGraphViewProvider.showLoading());
 	stats.registerBeforeCallback(() => topProvider.showLoading());
 	stats.registerBeforeCallback(() => callStackProvider.showLoading());
 	stats.registerBeforeCallback(() => metadataProvider.showLoading());
 	stats.registerBeforeCallback(() => gcTopProvider.showLoading());
+	stats.registerBeforeCallback(() => tasksProvider.showLoading());
 	stats.registerAfterCallback((stats) => flameGraphViewProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => topProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => callStackProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => metadataProvider.refresh(stats));
 	stats.registerAfterCallback((stats) => gcTopProvider.refresh(stats));
+	stats.registerAfterCallback((stats) => tasksProvider.refresh(stats));
 	stats.registerErrorCallback(() => flameGraphViewProvider.showError());
 	stats.registerErrorCallback(() => topProvider.showError());
 	stats.registerErrorCallback(() => callStackProvider.showError());
 	stats.registerErrorCallback(() => metadataProvider.showError());
 	stats.registerErrorCallback(() => gcTopProvider.showError());
+	stats.registerErrorCallback(() => tasksProvider.showError());
 	stats.registerAfterCallback((stats) => {
 		const editor = vscode.window.activeTextEditor;
 		if (editor?.document.uri.scheme === "file") {
@@ -98,6 +103,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	flameGraphViewProvider.onFrameSelected((frameKey) => callStackProvider.focusPath(frameKey));
 	callStackProvider.onFrameSelected((frameKey) => flameGraphViewProvider.focusFrame(frameKey));
+	flameGraphViewProvider.onFrameSelected((frameKey) => tasksProvider.focusPath(frameKey));
+	tasksProvider.onFrameSelected((frameKey) => flameGraphViewProvider.focusFrame(frameKey));
 	gcTopProvider.onThreadSelected((threadKey) => flameGraphViewProvider.focusThread(threadKey));
 
 	mcpServer.setActions({
@@ -145,6 +152,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.window.registerWebviewViewProvider(MetadataViewProvider.viewType, metadataProvider)
+	);
+
+	context.subscriptions.push(
+		vscode.window.registerWebviewViewProvider(TasksViewProvider.viewType, tasksProvider)
 	);
 
 	context.subscriptions.push(
@@ -241,6 +252,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				callStackProvider.showLive();
 				gcTopProvider.showLive();
 				metadataProvider.showLive();
+				tasksProvider.showLive();
 			}
 		})
 	);
@@ -264,6 +276,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			topProvider.hideLive();
 			callStackProvider.hideLive();
 			gcTopProvider.hideLive();
+			tasksProvider.hideLive();
 			metadataProvider.hideLive();
 		})
 	);

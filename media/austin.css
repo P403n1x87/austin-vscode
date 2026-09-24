@@ -322,6 +322,20 @@ button {
     padding: 4px 10px 6px 10px;
 }
 
+.swimlane-group-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: antiquewhite;
+    opacity: 0.5;
+    margin: 6px 0 3px 0;
+}
+
+.swimlane-group-label:first-child {
+    margin-top: 0;
+}
+
 .swimlane-row {
     display: flex;
     align-items: center;
@@ -368,6 +382,103 @@ button {
 }
 
 #gc-tooltip {
+    position: fixed;
+    background: rgba(24, 28, 32, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 5px;
+    padding: 7px 11px;
+    font-size: 11px;
+    color: antiquewhite;
+    pointer-events: none;
+    z-index: 100;
+    display: none;
+    max-width: 280px;
+    line-height: 1.5;
+}
+
+#task-panel {
+    width: 100%;
+    backdrop-filter: blur(12px);
+    background-color: rgba(40, 50, 58, 0.92);
+    display: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+#task-details>summary {
+    cursor: pointer;
+    padding: 3px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    color: antiquewhite;
+    opacity: 0.75;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#task-details>summary::before {
+    content: '▶';
+    font-size: 8px;
+    transition: transform 0.15s;
+}
+
+#task-details[open]>summary::before {
+    transform: rotate(90deg);
+}
+
+#task-swimlanes {
+    padding: 4px 10px 6px 10px;
+    max-height: 160px;
+    overflow-y: auto;
+}
+
+.task-trace-cluster {
+    position: relative;
+    margin-bottom: 6px;
+    padding-bottom: 2px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.task-trace-cluster:last-child {
+    border-bottom: none;
+}
+
+.task-trace-spines {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.task-trace-spine-line {
+    /* stroke color is set inline per-peg (media/flamegraph.js), matching
+       the level color of the child it leads to */
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke; /* viewBox x/y scale independently (% vs rows), keep a crisp 1px line either way */
+}
+
+.task-trace-block {
+    position: absolute;
+    height: 16px;
+    border-radius: 0;
+    /* background/color are set inline per-block (media/flamegraph.js),
+       one per await-nesting level -- see TASK_LEVEL_COLORS */
+    cursor: default;
+    font-size: 9px;
+    line-height: 16px;
+    padding: 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+#task-tooltip {
     position: fixed;
     background: rgba(24, 28, 32, 0.97);
     border: 1px solid rgba(255, 255, 255, 0.12);

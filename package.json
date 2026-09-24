@@ -125,6 +125,12 @@
       "austin-stats": [
         {
           "type": "webview",
+          "id": "austin-vscode.tasks",
+          "name": "Tasks",
+          "contextualTitle": "Tasks"
+        },
+        {
+          "type": "webview",
           "id": "austin-vscode.callStacks",
           "name": "Call Stacks",
           "contextualTitle": "Call Stacks"
