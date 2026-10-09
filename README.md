@@ -222,6 +222,13 @@ MCP client at the local server. You only need to do this once: if a `.mcp.json`
 with an austin entry already exists, the extension updates the port
 automatically on every restart.
 
+By default the server listens on a random free port. To share a `.mcp.json`
+with your team (e.g. by committing it to the repository), set
+`austin.mcp.port` to a fixed port and then generate the file. With a fixed port
+the extension no longer rewrites `.mcp.json` on restart. Each VS Code window
+runs its own server, so only one window can hold the fixed port at a time; any
+other window falls back to a random port and shows a warning.
+
 
 ## Configuration
 

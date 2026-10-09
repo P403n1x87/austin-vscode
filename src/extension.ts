@@ -24,8 +24,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	const stats = new AustinStats();
 
+	const mcpPort = vscode.workspace.getConfiguration('austin').get<number>('mcp.port', 0);
 	const mcpServer = new AustinMcpServer();
-	await mcpServer.start();
+	await mcpServer.start(mcpPort);
+	if (mcpPort !== 0 && mcpServer.port !== mcpPort) {
+		vscode.window.showWarningMessage(
+			`Austin: MCP port ${mcpPort} is already in use (possibly by another VS Code window). ` +
+			`Using port ${mcpServer.port} instead for this window.`
+		);
+	}
 	stats.registerAfterCallback((s) => mcpServer.update(s));
 	const mcpNeverChange = new vscode.EventEmitter<void>();
 	context.subscriptions.push(
@@ -43,6 +50,18 @@ export async function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration(async (e) => {
+			if (!e.affectsConfiguration('austin.mcp.port')) { return; }
+			const selection = await vscode.window.showInformationMessage(
+				'Austin: reload the window to apply the new MCP port.', 'Reload'
+			);
+			if (selection === 'Reload') {
+				vscode.commands.executeCommand('workbench.action.reloadWindow');
+			}
+		})
+	);
+
+	context.subscriptions.push(
 		vscode.window.onDidChangeActiveTextEditor((editor) => {
 			if (editor?.document.uri.scheme === "file") {
 				const path = editor.document.uri.fsPath;
@@ -56,7 +75,11 @@ export async function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
-	updateMcpJsonIfPresent(mcpServer.port);
+	// With a fixed port, .mcp.json is meant to be stable (e.g. committed), so
+	// leave it alone rather than writing a fallback port into it.
+	if (mcpPort === 0) {
+		updateMcpJsonIfPresent(mcpServer.port);
+	}
 
 	const output = vscode.window.createOutputChannel("Austin");
 	output.appendLine(`Austin MCP server listening on http://127.0.0.1:${mcpServer.port}/mcp`);
@@ -176,7 +199,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				? folders[0]
 				: await vscode.window.showWorkspaceFolderPick({ placeHolder: 'Select workspace folder for .mcp.json' });
 			if (!folder) { return; }
-			writeMcpJson(folder, mcpServer.port);
+			writeMcpJson(folder, mcpPort || mcpServer.port);
 			vscode.window.showInformationMessage(`Austin: .mcp.json written to ${folder.uri.fsPath}`);
 		})
 	);

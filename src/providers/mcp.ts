@@ -194,19 +194,32 @@ export class AustinMcpServer {
         this._actions = actions;
     }
 
-    /** Starts the server on an OS-assigned port. Resolves once the port is known. */
-    start(): Promise<void> {
+    /**
+     * Starts the server on the given port, or on an OS-assigned one when the
+     * port is 0. If the requested port is already in use, falls back to an
+     * OS-assigned port. Resolves once the port is known.
+     */
+    async start(port: number = 0): Promise<void> {
+        try {
+            await this._listen(port);
+        } catch (err) {
+            if (port === 0 || (err as NodeJS.ErrnoException).code !== 'EADDRINUSE') { throw err; }
+            await this._listen(0);
+        }
+    }
+
+    private _listen(port: number): Promise<void> {
         return new Promise((resolve, reject) => {
             const server = http.createServer((req, res) => this._handleRequest(req, res));
             server.on('error', reject);
-            server.listen(0, '127.0.0.1', () => {
+            server.listen(port, '127.0.0.1', () => {
                 server.removeListener('error', reject);
                 server.on('error', (err: NodeJS.ErrnoException) => {
                     console.error(`Austin MCP server error: ${err.message}`);
                 });
+                this._httpServer = server;
                 resolve();
             });
-            this._httpServer = server;
         });
     }
 
@@ -228,7 +241,32 @@ export class AustinMcpServer {
         this._stats = null;
     }
 
+    /**
+     * Guards against requests from web pages: DNS rebinding (unexpected Host)
+     * and cross-site requests (a browser Origin other than localhost).
+     */
+    private _isAllowedRequest(req: http.IncomingMessage): boolean {
+        const host = req.headers.host;
+        if (host !== `127.0.0.1:${this.port}` && host !== `localhost:${this.port}`) { return false; }
+
+        const origin = req.headers.origin;
+        if (origin === undefined) { return true; }
+        try {
+            const url = new URL(origin);
+            if (url.protocol !== 'http:' && url.protocol !== 'https:') { return true; }
+            return url.hostname === '127.0.0.1' || url.hostname === 'localhost';
+        } catch {
+            return false;
+        }
+    }
+
     private _handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+        if (!this._isAllowedRequest(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(this._error(null, -32600, 'Forbidden')));
+            return;
+        }
+
         if (req.method !== 'POST') {
             res.writeHead(405, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(this._error(null, -32600, 'Only POST is supported')));
