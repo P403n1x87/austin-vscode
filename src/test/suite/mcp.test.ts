@@ -14,17 +14,18 @@ import '../../mapExtension';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function post(port: number, body: unknown): Promise<unknown> {
+function post(port: number, body: unknown, headers: http.OutgoingHttpHeaders = {}): Promise<unknown> {
     return new Promise((resolve, reject) => {
         const payload = JSON.stringify(body);
         const req = http.request(
             { hostname: '127.0.0.1', port, path: '/mcp', method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } },
+              headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), ...headers } },
             (res) => {
                 let data = '';
                 res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
                 res.on('end', () => {
                     if (res.statusCode === 202) { resolve(null); return; }
+                    if (res.statusCode === 403) { reject(new Error('403 Forbidden')); return; }
                     try { resolve(JSON.parse(data)); }
                     catch (e) { reject(new Error(`Bad JSON: ${data}`)); }
                 });
@@ -109,6 +110,64 @@ suite('AustinMcpServer', () => {
             () => post(port, { jsonrpc: '2.0', method: 'ping', id: 1 }),
             /ECONNREFUSED/
         );
+    });
+
+    test('start(port) listens on the requested port', async () => {
+        const probe = new AustinMcpServer();
+        await probe.start();
+        const freePort = probe.port;
+        probe.dispose();
+
+        server = new AustinMcpServer();
+        await server.start(freePort);
+        assert.strictEqual(server.port, freePort);
+    });
+
+    test('start(port) falls back to a random port when the port is in use', async () => {
+        const holder = new AustinMcpServer();
+        await holder.start();
+        try {
+            server = new AustinMcpServer();
+            await server.start(holder.port);
+            assert.ok(server.port > 0);
+            assert.notStrictEqual(server.port, holder.port);
+            const res = await post(server.port, { jsonrpc: '2.0', method: 'ping', id: 1 }) as Record<string, unknown>;
+            assert.deepStrictEqual(res.result, {});
+        } finally {
+            holder.dispose();
+        }
+    });
+
+    // --- Request guard ------------------------------------------------------
+
+    test('requests with an unexpected Host are rejected', async () => {
+        server = await startedServer(new AustinStats());
+        await assert.rejects(
+            () => post(server!.port, { jsonrpc: '2.0', method: 'ping', id: 1 }, { Host: `evil.example:${server!.port}` }),
+            /403/
+        );
+    });
+
+    test('requests with a localhost Host are accepted', async () => {
+        server = await startedServer(new AustinStats());
+        const res = await post(server.port, { jsonrpc: '2.0', method: 'ping', id: 1 }, { Host: `localhost:${server.port}` }) as Record<string, unknown>;
+        assert.deepStrictEqual(res.result, {});
+    });
+
+    test('requests with a cross-site browser Origin are rejected', async () => {
+        server = await startedServer(new AustinStats());
+        await assert.rejects(
+            () => post(server!.port, { jsonrpc: '2.0', method: 'ping', id: 1 }, { Origin: 'https://evil.example' }),
+            /403/
+        );
+    });
+
+    test('requests with a localhost or non-web Origin are accepted', async () => {
+        server = await startedServer(new AustinStats());
+        for (const origin of ['http://localhost:3000', 'http://127.0.0.1', 'vscode-file://vscode-app']) {
+            const res = await post(server.port, { jsonrpc: '2.0', method: 'ping', id: 1 }, { Origin: origin }) as Record<string, unknown>;
+            assert.deepStrictEqual(res.result, {}, origin);
+        }
     });
 
     // --- MCP protocol -------------------------------------------------------
