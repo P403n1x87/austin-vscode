@@ -26,6 +26,22 @@ const hierWithNarrowFrame = {
     ],
 };
 
+// A thread with a directly-attached task -- the task is a `kind: 'task'`
+// child of the thread's own leaf frame, floated below it as its own tower
+// rather than sharing the leaf's width (see AustinStats.finalizeTaskNodes
+// and flamegraph-utils.js's layoutTaskForest).
+const hierarchyWithTask = {
+    kind: 'root' as const, key: 'root', name: 'root', value: 100,
+    children: [
+        {
+            kind: 'frame' as const, key: 'leaf', name: 'run_loop', value: 100, file: '/app/loop.py',
+            children: [
+                { kind: 'task' as const, key: 'task1', name: 'worker', value: 50, file: '/app/task.py', children: [] },
+            ],
+        },
+    ],
+};
+
 // Helper: decode the base64 data blob embedded in the SVG
 function decodeEmbeddedData(svg: string): { hierarchy: any; mode: string } {
     const match = svg.match(/id="fg-data">([A-Za-z0-9+/=]+)</);
@@ -242,5 +258,54 @@ suite('generateInteractiveSVG — logo', () => {
         const labelTag = (svg: string) => svg.match(/<text [^>]*>CPU Time Profile/)?.[0] ?? '';
         assert.ok(labelTag(svgWith).includes('x="32"'),  'label x should be 32 with logo');
         assert.ok(labelTag(svgWithout).includes('x="8"'), 'label x should be 8 without logo');
+    });
+});
+
+// ── Task data ─────────────────────────────────────────────────────────────────
+//
+// The export used to filter out every `kind: 'task'` node entirely (a
+// one-line `c.kind !== 'task'` in the old layout), silently dropping all
+// asyncio task data from exported/saved profiles. It now shares the same
+// layoutFrames + layoutTaskForest/flattenTaskForest/computeFloorY pipeline
+// as the interactive webview (see media/flamegraph-utils.js), so task
+// towers render as their own frame elements alongside the main tree.
+
+suite('generateInteractiveSVG — task data', () => {
+    test('renders a frame element for a task node, not just the main tree', () => {
+        const svg = generateInteractiveSVG(hierarchyWithTask, 'cpu');
+        // root + leaf + task = 3 frames
+        assert.strictEqual(countOccurrences(svg, 'class="frame"'), 3);
+        assert.ok(svg.includes('worker'), 'expected the task\'s own name in the output');
+    });
+
+    test('task frame carries a title with its own metric, like any other frame', () => {
+        const svg = generateInteractiveSVG(hierarchyWithTask, 'cpu');
+        const titles = svg.match(/<title>[^<]*<\/title>/g) || [];
+        assert.ok(titles.some(t => t.includes('worker')), 'expected a title block for the task frame');
+    });
+
+    test('embedded data still carries the task node for the client-side re-layout', () => {
+        const svg = generateInteractiveSVG(hierarchyWithTask, 'cpu');
+        const { hierarchy } = decodeEmbeddedData(svg);
+        const leaf = hierarchy.children[0];
+        assert.strictEqual(leaf.children[0].kind, 'task');
+        assert.strictEqual(leaf.children[0].name, 'worker');
+    });
+
+    test('a hierarchy with only a task under the root still renders without throwing', () => {
+        const onlyTask = {
+            kind: 'root' as const, key: 'root', name: 'root', value: 50,
+            children: [{ kind: 'task' as const, key: 't', name: 'solo', value: 50, children: [] }],
+        };
+        assert.doesNotThrow(() => generateInteractiveSVG(onlyTask, 'cpu'));
+        const svg = generateInteractiveSVG(onlyTask, 'cpu');
+        assert.ok(svg.includes('solo'));
+    });
+
+    test('embedded script now includes task-forest layout functions', () => {
+        const svg = generateInteractiveSVG(simpleHierarchy, 'cpu');
+        for (const fn of ['layoutTaskForest', 'flattenTaskForest', 'computeFloorY']) {
+            assert.ok(svg.includes(fn), `missing ${fn} in embedded script`);
+        }
     });
 });
