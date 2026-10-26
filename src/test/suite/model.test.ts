@@ -525,16 +525,33 @@ suite('AustinStats — error callbacks', () => {
 // ---------------------------------------------------------------------------
 // AustinStats.getTaskForest()
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Task helpers: tasks get time from their owning thread's samples, the way
+// the MOJO parser feeds them in -- a task report sets a task's position, and
+// every later sample of its thread gives it that sample's time there.
+// ---------------------------------------------------------------------------
+const taskFrame = (scope: string, line = 1) => ({ module: '/mod.py', scope, line });
+
+// MOJO_TASK_STACK: task `id` is at `frames`, reported with a sample of `pid:tid`.
+function at(stats: AustinStats, id: string, frames: { module: string, scope: string, line: number }[], pid = 1, tid = 'A') {
+    stats.updateTaskPosition(id, frames, pid, tid);
+}
+
+// A sample of thread `pid:tid` taking `metric`, running task `running` if any.
+function sample(stats: AustinStats, metric: number, pid = 1, tid = 'A', running: string | null = null, frames = [taskFrame('loop')]) {
+    stats.update(pid, tid, frames, metric, false, running);
+}
+
 suite('AustinStats.getTaskForest()', () => {
 
-    const frame = (scope: string, line = 1) => ({ module: '/mod.py', scope, line });
+    const frame = taskFrame;
 
     test('a single root task with no waiter groups under its owner thread', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setTaskName('t1', 'main');
-        stats.setTaskOwner('t1', 123, '0x1');
-        stats.updateTaskStack('t1', [frame('main')], 100);
+        at(stats, 't1', [frame('main')], 123, '0x1');
+        sample(stats, 100, 123, '0x1', 't1');
         stats.refresh();
 
         const forest = stats.getTaskForest();
@@ -549,30 +566,16 @@ suite('AustinStats.getTaskForest()', () => {
         assert.strictEqual(forest[0].tasks[0].children.length, 0);
     });
 
-    test('a task with no captured owner lands in a synthetic orphaned group', () => {
-        const stats = new AustinStats();
-        stats.begin('test.austin');
-        stats.setTaskName('t1', 'stuck_worker');
-        stats.updateTaskStack('t1', [frame('stuck_worker')], 50);
-        stats.refresh();
-
-        const forest = stats.getTaskForest();
-        assert.strictEqual(forest.length, 1);
-        assert.strictEqual(forest[0].pid, -1);
-        assert.strictEqual(forest[0].tid, 'orphaned');
-        assert.strictEqual(forest[0].tasks[0].id, 't1');
-    });
-
     test('a task awaited by another nests under its awaiter, not the fallback root', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setTaskName('parent', 'main');
         stats.setTaskName('child', 'worker-0');
-        stats.setTaskOwner('parent', 1, 'A');
         // MOJO_TASK_WAITER(task_id=child, waiter_id=parent): parent awaits child.
         stats.updateTaskWaiter('child', 'parent');
-        stats.updateTaskStack('parent', [frame('main')], 100);
-        stats.updateTaskStack('child', [frame('worker')], 40);
+        at(stats, 'parent', [frame('main')]);
+        at(stats, 'child', [frame('worker')]);
+        sample(stats, 100);
         stats.refresh();
 
         const forest = stats.getTaskForest();
@@ -583,18 +586,45 @@ suite('AustinStats.getTaskForest()', () => {
         assert.strictEqual(parent.children[0].id, 'child');
     });
 
-    test('total is own plus every (transitively) awaited task, own is unaffected', () => {
+    test('own is running time; in wall time, total is the time alive, not inflated by awaited tasks', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
+        stats.setMetadata('mode', 'wall');
+        stats.setTaskName('parent', 'main');
+        stats.setTaskName('child', 'worker-0');
+        stats.updateTaskWaiter('child', 'parent');
+        at(stats, 'parent', [frame('main')]);
+        sample(stats, 10, 1, 'A', 'parent');  // parent running
+        at(stats, 'child', [frame('worker')]);
+        sample(stats, 20, 1, 'A', 'child');   // parent awaiting child, child running
+        sample(stats, 30);                    // both awaiting
+        stats.closeTask('child');
+        sample(stats, 40, 1, 'A', 'parent');  // parent running again
+        stats.refresh();
+
+        const [parent] = stats.getTaskForest()[0].tasks;
+        assert.strictEqual(parent.own, 50);
+        assert.strictEqual(parent.total, 100, 'alive for the whole profile; the child\'s time is already in it');
+        const [child] = parent.children;
+        assert.strictEqual(child.own, 20);
+        assert.strictEqual(child.total, 50);
+    });
+
+    test('in CPU time, total is own plus every (transitively) awaited task\'s total', () => {
+        const stats = new AustinStats();
+        stats.begin('test.austin');
+        stats.setMetadata('mode', 'cpu');
         stats.setTaskName('grandparent', 'main');
         stats.setTaskName('parent', 'worker-0');
         stats.setTaskName('child', 'leaf');
-        stats.setTaskOwner('grandparent', 1, 'A');
         stats.updateTaskWaiter('parent', 'grandparent');
         stats.updateTaskWaiter('child', 'parent');
-        stats.updateTaskStack('grandparent', [frame('main')], 10);
-        stats.updateTaskStack('parent', [frame('worker')], 20);
-        stats.updateTaskStack('child', [frame('leaf')], 30);
+        at(stats, 'grandparent', [frame('main')]);
+        at(stats, 'parent', [frame('worker')]);
+        at(stats, 'child', [frame('leaf')]);
+        sample(stats, 10, 1, 'A', 'grandparent');
+        sample(stats, 20, 1, 'A', 'parent');
+        sample(stats, 30, 1, 'A', 'child');
         stats.refresh();
 
         const [grandparent] = stats.getTaskForest()[0].tasks;
@@ -616,8 +646,9 @@ suite('AustinStats.getTaskForest()', () => {
         // Garbled/concurrently-mutated remote memory: a awaits b and b awaits a.
         stats.updateTaskWaiter('b', 'a');
         stats.updateTaskWaiter('a', 'b');
-        stats.updateTaskStack('a', [frame('a')], 10);
-        stats.updateTaskStack('b', [frame('b')], 10);
+        at(stats, 'a', [frame('a')]);
+        at(stats, 'b', [frame('b')]);
+        sample(stats, 10);
 
         assert.doesNotThrow(() => stats.refresh());
         const forest = stats.getTaskForest();
@@ -632,10 +663,10 @@ suite('AustinStats.getTaskForest()', () => {
         stats.begin('test.austin');
         stats.setTaskName('t1', 'loop0-worker');
         stats.setTaskName('t2', 'loop1-worker');
-        stats.setTaskOwner('t1', 1, 'Loop0-Thread');
-        stats.setTaskOwner('t2', 1, 'Loop1-Thread');
-        stats.updateTaskStack('t1', [frame('worker')], 10);
-        stats.updateTaskStack('t2', [frame('worker')], 10);
+        at(stats, 't1', [frame('worker')], 1, 'Loop0-Thread');
+        at(stats, 't2', [frame('worker')], 1, 'Loop1-Thread');
+        sample(stats, 10, 1, 'Loop0-Thread');
+        sample(stats, 10, 1, 'Loop1-Thread');
         stats.refresh();
 
         const forest = stats.getTaskForest();
@@ -654,16 +685,13 @@ suite('AustinStats.getTaskForest()', () => {
     test('a task and its owning thread group carry the same frameKey the flame graph would assign', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
-        // A regular sample is what actually creates the Process/Thread nodes
-        // in the hierarchy -- without one, there's nothing for the group
-        // header to cross-navigate to, so its frameKey stays undefined (see
-        // the next test). The task itself attaches under the thread's own
+        // The thread's samples are what actually create the Process/Thread
+        // nodes in the hierarchy. The task attaches under the thread's own
         // last frame ("select", resolveTaskParent's threadLeaves lookup) --
         // the thread stack waiting on its tasks genuinely ends there.
-        stats.update(7, '0x1', [frame('select')], 50);
         stats.setTaskName('t1', 'worker-0');
-        stats.setTaskOwner('t1', 7, '0x1');
-        stats.updateTaskStack('t1', [frame('worker')], 100);
+        at(stats, 't1', [frame('worker')], 7, '0x1');
+        sample(stats, 50, 7, '0x1', null, [frame('select')]);
         stats.refresh();
 
         const [group] = stats.getTaskForest();
@@ -671,7 +699,7 @@ suite('AustinStats.getTaskForest()', () => {
         assert.strictEqual(group.frameKey, expectedThreadKey);
 
         const [task] = group.tasks;
-        // The task's own entry frame is now merged by shape (see
+        // The task's own entry frame is merged by shape (see
         // finalizeTaskNodes), so its key is its first frame's content key
         // ("/mod.py:worker"), nested under "select" (the thread's own last
         // frame), since that's where it's attached.
@@ -679,88 +707,104 @@ suite('AustinStats.getTaskForest()', () => {
         assert.strictEqual(task.frameKey, hashPath('/mod.py:worker', expectedLeafKey));
     });
 
-    test('a task never attached to a real thread node still gets a frameKey via the fallback root', () => {
+    test('a task whose thread has no frames of its own still gets a frameKey via the fallback root', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setTaskName('t1', 'worker-0');
-        stats.setTaskOwner('t1', 7, '0x1');
-        stats.updateTaskStack('t1', [frame('worker')], 100);
+        at(stats, 't1', [frame('worker')], 7, '0x1');
+        sample(stats, 50, 7, '0x1', null, []);
         stats.refresh();
 
-        // No regular sample was ever recorded for "7:0x1", so there's no
-        // real Process/Thread node for the group header to point at -- but
-        // the task itself still attaches under the flamegraph's "__tasks__"
-        // fallback root (resolveTaskParent falls back to it when the
-        // owner's threadLeaves entry is missing), so it's still navigable.
+        // The thread's samples carry no frames, so there's no thread leaf
+        // for the task to attach to -- it attaches under the flamegraph's
+        // "__tasks__" fallback root instead (resolveTaskParent), so it's
+        // still navigable.
         const [group] = stats.getTaskForest();
-        assert.strictEqual(group.frameKey, undefined);
-        // Merged by shape (see finalizeTaskNodes): the key is the task's
-        // first frame's content key, not the raw task id.
         assert.strictEqual(group.tasks[0].frameKey, hashPath('/mod.py:worker', hashPath('__tasks__', 0)));
-    });
-
-    test('the orphaned group frameKey matches the flame graph fallback root', () => {
-        const stats = new AustinStats();
-        stats.begin('test.austin');
-        stats.setTaskName('t1', 'stuck_worker');
-        stats.updateTaskStack('t1', [frame('stuck_worker')], 50);
-        stats.refresh();
-
-        // A task with no waiter and no owner attaches under the flamegraph's
-        // own "__tasks__" fallback root (see resolveTaskParent), which
-        // finalizeTaskNodes creates during refresh() -- the orphaned group
-        // here is meant to match that exact node.
-        const [group] = stats.getTaskForest();
-        assert.strictEqual(group.pid, -1);
-        assert.strictEqual(group.frameKey, hashPath('__tasks__', 0));
     });
 });
 
 
 // ---------------------------------------------------------------------------
-// AustinStats.updateTaskStack() — editor stats integration
+// Task time: where it comes from
 // ---------------------------------------------------------------------------
-suite('AustinStats.updateTaskStack() feeds editor stats', () => {
+suite('AustinStats — task time from thread samples', () => {
 
-    const frame = (scope: string, line = 1) => ({ module: '/mod.py', scope, line });
+    const frame = taskFrame;
+
+    // None of these tasks await each other, so total is the task's own time.
+    function own(stats: AustinStats, id: string): number {
+        return stats.getTaskForest().flatMap(g => g.tasks).find(t => t.id === id)!.total;
+    }
+
+    test('every live task of the sample\'s thread gets its time, at its current position', () => {
+        const stats = new AustinStats();
+        stats.begin('test.austin');
+        at(stats, 'running', [frame('work')]);
+        at(stats, 'waiting', [frame('wait')]);
+        at(stats, 'other', [frame('wait')], 1, 'B');
+        sample(stats, 10, 1, 'A', 'running');
+        stats.refresh();
+
+        assert.strictEqual(own(stats, 'running'), 10, 'running time');
+        assert.strictEqual(own(stats, 'waiting'), 10, 'await time');
+        assert.strictEqual(own(stats, 'other'), 0, 'another thread\'s task gets nothing');
+    });
+
+    test('in CPU mode, only the running task gets time', () => {
+        const stats = new AustinStats();
+        stats.begin('test.austin');
+        stats.setMetadata('mode', 'cpu');
+        at(stats, 'running', [frame('work')]);
+        at(stats, 'waiting', [frame('wait')]);
+        sample(stats, 10, 1, 'A', 'running');
+        stats.refresh();
+
+        assert.strictEqual(own(stats, 'running'), 10);
+        assert.strictEqual(own(stats, 'waiting'), 0, 'a task that isn\'t running uses no CPU');
+    });
+
+    test('a task gets time at the position it holds, until its next report or its closing', () => {
+        const stats = new AustinStats();
+        stats.begin('test.austin');
+        at(stats, 't1', [frame('outer'), frame('first')]);
+        sample(stats, 10);
+        at(stats, 't1', [frame('outer'), frame('second')]);
+        sample(stats, 20);
+        stats.closeTask('t1');
+        sample(stats, 40);
+        stats.refresh();
+
+        const outer = stats.locationMap.get('/mod.py')!;
+        const timeAt = (scope: string) => [...outer.values()].find(([fo]) => fo.scope === scope)!;
+        assert.strictEqual(timeAt('first')[1], 10);
+        assert.strictEqual(timeAt('second')[1], 20);
+        assert.strictEqual(own(stats, 't1'), 30, 'nothing once closed');
+    });
 
     test('a task frame is recorded in locationMap like a regular sample', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
-        stats.setTaskName('t1', 'worker-0');
-        stats.updateTaskStack('t1', [frame('outer', 1), frame('leaf', 2)], 100);
+        at(stats, 't1', [frame('outer', 1), frame('leaf', 2)]);
+        sample(stats, 100, 1, 'A', null, [frame('loop', 3)]);
         stats.refresh();
 
-        const moduleMap = stats.locationMap.get('/mod.py');
-        assert.ok(moduleMap, 'module should be present in locationMap');
-        const [, outerOwn, outerTotal] = [...moduleMap!.values()][0];
-        assert.strictEqual(outerTotal, 100, 'every frame in the chain gets total time');
-        assert.strictEqual(outerOwn, 0, 'only the leaf frame gets own time');
-        const leafEntry = [...moduleMap!.values()].find(([fo]) => fo.scope === 'leaf')!;
-        assert.strictEqual(leafEntry[1], 100, 'the leaf frame gets own time');
-        assert.strictEqual(leafEntry[2], 100);
+        const moduleMap = stats.locationMap.get('/mod.py')!;
+        const entry = (scope: string) => [...moduleMap.values()].find(([fo]) => fo.scope === scope)!;
+        assert.strictEqual(entry('outer')[2], 100, 'every frame in the chain gets total time');
+        assert.strictEqual(entry('outer')[1], 0, 'only the leaf frame gets own time');
+        assert.strictEqual(entry('leaf')[1], 100, 'the leaf frame gets own time');
+        assert.strictEqual(entry('leaf')[2], 100);
     });
 
-    test('task time is added to overallTotal alongside regular sample time', () => {
+    test('task time is not added to overallTotal: it is the thread\'s own time, seen per task', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
-        stats.update(1, '0x1', [frame('regular')], 50);
-        stats.setTaskName('t1', 'worker-0');
-        stats.updateTaskStack('t1', [frame('task-work')], 30);
+        at(stats, 't1', [frame('task-work')]);
+        sample(stats, 50, 1, 'A', 't1');
         stats.refresh();
 
-        assert.strictEqual(stats.overallTotal, 80);
-    });
-
-    test('an elapsed of null falls back to the recorded sampling interval', () => {
-        const stats = new AustinStats();
-        stats.begin('test.austin');
-        stats.setMetadata('interval', '250');
-        stats.setTaskName('t1', 'worker-0');
-        stats.updateTaskStack('t1', [frame('leaf')], null);
-        stats.refresh();
-
-        assert.strictEqual(stats.overallTotal, 250);
+        assert.strictEqual(stats.overallTotal, 50);
     });
 });
 
@@ -770,17 +814,16 @@ suite('AustinStats.updateTaskStack() feeds editor stats', () => {
 // ---------------------------------------------------------------------------
 suite('AustinStats.getTaskTraces()', () => {
 
-    const frame = (scope: string, line = 1) => ({ module: '/mod.py', scope, line });
+    const frame = taskFrame;
 
-    test('a single root task spans from its first to its last observed position on its owning thread\'s own clock', () => {
+    test('a single root task spans from its first report to its last sample, on its owning thread\'s own clock', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setTaskName('t1', 'worker-0');
-        stats.setTaskOwner('t1', 1, '0x1');
-        stats.updateTaskStack('t1', [frame('a')], 10); // t1 first-seen at thread clock 0
-        stats.update(1, '0x1', [frame('loop')], 25);   // thread clock -> 25 (the ONLY thing that advances it)
-        stats.updateTaskStack('t1', [frame('b')], 10); // t1 last-seen at thread clock 25
-        stats.update(1, '0x1', [frame('loop')], 25);   // thread clock -> 50
+        at(stats, 't1', [frame('a')], 1, '0x1'); // first reported at thread clock 0
+        sample(stats, 25, 1, '0x1');              // thread clock -> 25, t1 alive until then
+        stats.closeTask('t1');
+        sample(stats, 25, 1, '0x1');              // thread clock -> 50
         stats.refresh();
 
         const [group] = stats.getTaskTraces();
@@ -790,7 +833,7 @@ suite('AustinStats.getTaskTraces()', () => {
         assert.strictEqual(root.taskId, 't1');
         assert.strictEqual(root.name, 'worker-0');
         assert.strictEqual(root.startFraction, 0);
-        assert.strictEqual(root.endFraction, 0.5, 'last-seen position (25) over the thread\'s own total (50)');
+        assert.strictEqual(root.endFraction, 0.5, 'last seen (25) over the thread\'s own total (50)');
         assert.strictEqual(root.children.length, 0);
     });
 
@@ -799,64 +842,48 @@ suite('AustinStats.getTaskTraces()', () => {
         stats.begin('test.austin');
         stats.setTaskName('parent', 'main');
         stats.setTaskName('child', 'worker-0');
-        stats.setTaskOwner('parent', 1, 'A');
         stats.updateTaskWaiter('child', 'parent');
-        stats.updateTaskStack('parent', [frame('main')], 10); // parent first-seen at clock 0
-        stats.update(1, 'A', [frame('loop')], 25);             // clock -> 25
-        stats.setTaskOwner('child', 1, 'A');
-        stats.updateTaskStack('child', [frame('worker')], 10); // child first-seen at clock 25
-        stats.update(1, 'A', [frame('loop')], 25);             // clock -> 50
-        stats.updateTaskStack('child', [frame('worker')], 10); // child last-seen at clock 50
-        stats.update(1, 'A', [frame('loop')], 25);             // clock -> 75
-        stats.updateTaskStack('parent', [frame('main')], 65); // parent last-seen at clock 75, comfortably enclosing the child
+        at(stats, 'parent', [frame('main')]); // parent first reported at clock 0
+        sample(stats, 25);                     // clock -> 25
+        at(stats, 'child', [frame('worker')]); // child first reported at clock 25
+        sample(stats, 25);                     // clock -> 50
+        stats.closeTask('child');              // child last seen at clock 50
+        sample(stats, 25);                     // clock -> 75, parent last seen
         stats.refresh();
 
         const [group] = stats.getTaskTraces();
         assert.strictEqual(group.roots.length, 1, 'only the parent is a root; the child nests under it');
         const [root] = group.roots;
         assert.strictEqual(root.taskId, 'parent');
+        assert.strictEqual(root.endFraction, 1);
         assert.strictEqual(root.children.length, 1);
         const [child] = root.children;
         assert.strictEqual(child.taskId, 'child');
-        // child's first flush is a single dwell block of weight 10, ending
-        // at clock 25 -- its start is back-computed as 25 - 10 = 15, not 25
-        // (see updateTaskStack's blockStart), so it doesn't collapse to a
-        // zero-width point at its first (and, here, only early) observation.
-        assert.strictEqual(child.startFraction, 15 / 75);
+        assert.strictEqual(child.startFraction, 1 / 3);
         assert.strictEqual(child.endFraction, 2 / 3);
     });
 
-    test('a child\'s own back-computed start is clipped into its parent\'s window, never sticking out to the left', () => {
+    test('a child on another thread is clipped into its parent\'s window, never sticking out to the left', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setTaskName('parent', 'gather-root');
         stats.setTaskName('child', 'worker-0');
-        stats.setTaskOwner('parent', 1, 'A');
         stats.updateTaskWaiter('child', 'parent');
 
-        // Parent's own single flush already covers nearly the whole window
-        // (weight close to the clock at flush time -- see the eviction test
-        // above), giving it a small but nonzero start.
-        stats.update(1, 'A', [frame('loop')], 90);
-        stats.updateTaskStack('parent', [frame('main')], 80); // parent: clock=90, weight=80 -> raw start=10
-
-        // Child's OWN first (and only) flush has a weight far bigger than
-        // the thread's elapsed clock at that early point -- its back-
-        // computed start clamps to 0 on its own terms, even though it
-        // logically cannot have started before the task that awaits it.
-        stats.setTaskOwner('child', 1, 'A');
-        stats.updateTaskStack('child', [frame('worker')], 500); // clock=90, weight=500 -> raw start clamps to 0
-
-        stats.update(1, 'A', [frame('loop')], 10); // clock -> 100
+        sample(stats, 50, 1, 'A');                       // A-clock -> 50
+        at(stats, 'parent', [frame('main')], 1, 'A');    // parent first reported at A-clock 50
+        // The child's range is on ITS thread's clock, which starts at 0.
+        at(stats, 'child', [frame('worker')], 1, 'B');
+        sample(stats, 10, 1, 'B');
+        sample(stats, 50, 1, 'A');                       // A-clock -> 100
         stats.refresh();
 
-        const [group] = stats.getTaskTraces();
+        const [group] = stats.getTaskTraces().filter(g => g.tid === 'A');
         const [root] = group.roots;
-        assert.strictEqual(root.startFraction, 0.1, 'parent: (90 - 80) / 100');
+        assert.strictEqual(root.startFraction, 0.5);
         const [child] = root.children;
-        // Without the parent-bounds clip this would be 0 (its own raw,
-        // unclipped back-computed start) -- clipped into the parent's
-        // [0.1, 0.9] window, it can't render to the left of its parent.
+        // Without the parent-bounds clip this would be 0 -- clipped into the
+        // parent's [0.5, 1] window, it can't render to the left of its parent.
         assert.strictEqual(child.startFraction, root.startFraction);
     });
 
@@ -864,18 +891,16 @@ suite('AustinStats.getTaskTraces()', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setTaskName('t1', 'early');
-        stats.setTaskOwner('t1', 1, 'A');
-        stats.updateTaskStack('t1', [frame('a')], 10); // first-seen at A-clock 0
-        stats.update(1, 'A', [frame('loop')], 40);      // A-clock -> 40
-        stats.updateTaskStack('t1', [frame('a')], 10); // last-seen at A-clock 40
-        stats.update(1, 'A', [frame('loop')], 40);      // A-clock -> 80
+        at(stats, 't1', [frame('a')], 1, 'A'); // first reported at A-clock 0
+        sample(stats, 40, 1, 'A');              // A-clock -> 40
+        stats.closeTask('t1');
+        sample(stats, 40, 1, 'A');              // A-clock -> 80
 
         stats.setTaskName('t2', 'late');
-        stats.setTaskOwner('t2', 2, 'B');
-        stats.updateTaskStack('t2', [frame('b')], 10); // first-seen at B-clock 0
-        stats.update(2, 'B', [frame('loop')], 5);       // B-clock -> 5
-        stats.updateTaskStack('t2', [frame('b')], 10); // last-seen at B-clock 5
-        stats.update(2, 'B', [frame('loop')], 5);       // B-clock -> 10
+        at(stats, 't2', [frame('b')], 2, 'B'); // first reported at B-clock 0
+        sample(stats, 5, 2, 'B');               // B-clock -> 5
+        stats.closeTask('t2');
+        sample(stats, 5, 2, 'B');               // B-clock -> 10
         stats.refresh();
 
         const groups = stats.getTaskTraces();
@@ -891,65 +916,34 @@ suite('AustinStats.getTaskTraces()', () => {
         assert.strictEqual(late.endFraction, 0.5);
     });
 
-    test('a task flushed only once (e.g. at eviction) still spans its whole reported dwell, not a zero-width point', () => {
+    test('a task parked at a single position the whole time spans its whole life', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setTaskName('t1', 'gather-root');
-        stats.setTaskOwner('t1', 1, 'A');
-        // Austin only re-emits a task's stack when its coroutine identity
-        // changes (see _py_asyncio__emit_task's fingerprint check) -- a task
-        // blocked at the same await point the whole time gets exactly ONE
-        // flush, typically at eviction, whose weight covers its ENTIRE
-        // observed dwell rather than just the instant of this one flush.
-        stats.update(1, 'A', [frame('loop')], 90); // thread clock runs ahead to 90 first
-        stats.updateTaskStack('t1', [frame('main')], 80); // single flush, weight=80, at clock=90
-        stats.update(1, 'A', [frame('loop')], 10); // thread clock -> 100
+        sample(stats, 10);                    // clock -> 10
+        at(stats, 't1', [frame('main')]);     // its only report
+        sample(stats, 80);                    // clock -> 90
+        stats.closeTask('t1');
+        sample(stats, 10);                    // clock -> 100
         stats.refresh();
 
-        const [group] = stats.getTaskTraces();
-        const [root] = group.roots;
-        // Back-computed start (90 - 80 = 10) over end (90), out of a total
-        // of 100 -- a real, non-degenerate span, not startFraction === endFraction.
+        const [root] = stats.getTaskTraces()[0].roots;
         assert.strictEqual(root.startFraction, 0.1);
         assert.strictEqual(root.endFraction, 0.9);
     });
 
-    test('a task never evicted (still alive when sampling stops) uses its discovery time, not a one-interval guess', () => {
+    test('a task still alive when sampling stops spans up to the end', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
-        stats.setMetadata('interval', '5'); // tiny, to make the wrong fallback obviously wrong if it were used
         stats.setTaskName('t1', 'driver');
-        // Discovered near the very start of the profile...
-        stats.setTaskOwner('t1', 1, 'A');
-        stats.update(1, 'A', [frame('loop')], 95); // thread clock runs on for a long time
-        // ...but its coroutine never changes identity again, so Austin never
-        // gets a real measured dwell for it -- the only data point is the
-        // end-of-stream carry flush (elapsed=null), which the naive
-        // interval-based fallback would place almost entirely at the very
-        // end (clock=95, weight=5 -> start=90) despite it having been
-        // discovered at clock 0.
-        stats.updateTaskStack('t1', [frame('main')], null);
-        stats.update(1, 'A', [frame('loop')], 5); // thread clock -> 100
+        at(stats, 't1', [frame('main')]);
+        sample(stats, 95);
+        sample(stats, 5);
         stats.refresh();
 
-        const [group] = stats.getTaskTraces();
-        const [root] = group.roots;
-        assert.strictEqual(root.startFraction, 0, 'uses taskDiscoveredAt (0), not the interval-based guess (90)');
-        assert.strictEqual(root.endFraction, 0.95);
-    });
-
-    test('orphaned (ownerless) tasks land in a synthetic group, denominated by overallTotal', () => {
-        const stats = new AustinStats();
-        stats.begin('test.austin');
-        stats.setTaskName('t1', 'stuck_worker');
-        stats.updateTaskStack('t1', [frame('a')], 10); // no owner -- falls back to overallTotal
-        stats.update(99, 'X', [frame('other')], 20);   // unrelated sample, just to keep overallTotal nonzero
-        stats.refresh();
-
-        const [group] = stats.getTaskTraces();
-        assert.strictEqual(group.pid, -1);
-        assert.strictEqual(group.tid, 'orphaned');
-        assert.strictEqual(group.roots[0].taskId, 't1');
+        const [root] = stats.getTaskTraces()[0].roots;
+        assert.strictEqual(root.startFraction, 0);
+        assert.strictEqual(root.endFraction, 1);
     });
 
     test('with no tasks recorded, returns an empty list', () => {
@@ -959,15 +953,11 @@ suite('AustinStats.getTaskTraces()', () => {
         assert.deepStrictEqual(stats.getTaskTraces(), []);
     });
 
-    test('a task recorded with zero elapsed (overallTotal stays 0) does not divide by zero', () => {
+    test('a task on a thread with no samples (its clock stays 0) does not divide by zero', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setTaskName('t1', 'worker-0');
-        // elapsed=0 is a valid, distinct-from-null value: updateTaskStack
-        // still creates the task node, but the `weight > 0` guard leaves
-        // overallTotal at 0 -- exactly the case getTaskTraces must not
-        // divide by.
-        stats.updateTaskStack('t1', [frame('a')], 0);
+        at(stats, 't1', [frame('a')]);
         stats.refresh();
         assert.deepStrictEqual(stats.getTaskTraces(), []);
     });
@@ -982,15 +972,14 @@ suite('AustinStats.getTaskTraces()', () => {
 // providers both do on every refresh -- doesn't redo that walk twice.
 suite('AustinStats -- frame key cache', () => {
 
-    const frame = (scope: string, line = 1) => ({ module: '/mod.py', scope, line });
+    const frame = taskFrame;
 
     test('getTaskForest and getTaskTraces agree on the same task\'s frameKey within one refresh', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setTaskName('t1', 'worker-0');
-        stats.setTaskOwner('t1', 1, '0x1');
-        stats.updateTaskStack('t1', [frame('a')], 10);
-        stats.update(1, '0x1', [frame('loop')], 25); // advances the thread clock so getTaskTraces' denom isn't 0
+        at(stats, 't1', [frame('a')], 1, '0x1');
+        sample(stats, 25, 1, '0x1');
         stats.refresh();
 
         const forestKey = stats.getTaskForest()[0].tasks[0].frameKey;
@@ -1003,8 +992,8 @@ suite('AustinStats -- frame key cache', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setTaskName('t1', 'worker-0');
-        stats.setTaskOwner('t1', 1, '0x1');
-        stats.updateTaskStack('t1', [frame('a')], 10);
+        at(stats, 't1', [frame('a')], 1, '0x1');
+        sample(stats, 10, 1, '0x1');
         stats.refresh();
         const firstKey = stats.getTaskForest()[0].tasks[0].frameKey;
 
@@ -1012,10 +1001,12 @@ suite('AustinStats -- frame key cache', () => {
         // changing the hierarchy's shape (a new sibling branch) without
         // touching t1's own path -- t1's frameKey must still resolve
         // correctly (i.e. not fall back to a stale cached map missing the
-        // now-different node identities finalizeTaskNodes rebuilt).
+        // now-different node identities finalizeTaskNodes rebuilt). t1 is
+        // done by then, so the two don't overlap and need no shim.
+        stats.closeTask('t1');
         stats.setTaskName('t2', 'worker-1');
-        stats.setTaskOwner('t2', 1, '0x1');
-        stats.updateTaskStack('t2', [frame('b')], 10);
+        at(stats, 't2', [frame('b')], 1, '0x1');
+        sample(stats, 10, 1, '0x1');
         stats.refresh();
 
         const forest = stats.getTaskForest();
@@ -1035,15 +1026,15 @@ suite('AustinStats -- frame key cache', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setTaskName('t1', 'worker-0');
-        stats.setTaskOwner('t1', 1, '0x1');
-        stats.updateTaskStack('t1', [frame('a')], 10);
+        at(stats, 't1', [frame('a')], 1, '0x1');
+        sample(stats, 10, 1, '0x1');
         stats.refresh();
         stats.getTaskForest(); // populate the cache before starting a new profile
 
         stats.begin('test2.austin'); // calls clear() internally
         stats.setTaskName('t9', 'worker-9');
-        stats.setTaskOwner('t9', 2, '0x2');
-        stats.updateTaskStack('t9', [frame('c')], 10);
+        at(stats, 't9', [frame('c')], 2, '0x2');
+        sample(stats, 10, 2, '0x2');
         stats.refresh();
 
         const key = stats.getTaskForest()[0].tasks[0].frameKey;
@@ -1056,7 +1047,7 @@ suite('AustinStats -- frame key cache', () => {
 // ---------------------------------------------------------------------------
 suite('AustinStats — task shape merging in the main flamegraph', () => {
 
-    const frame = (scope: string, line = 1) => ({ module: '/mod.py', scope, line });
+    const frame = taskFrame;
 
     // Same-shape task nodes attach directly under the thread's own last
     // frame (resolveTaskParent's threadLeaves fallback), possibly behind a
@@ -1086,15 +1077,13 @@ suite('AustinStats — task shape merging in the main flamegraph', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setMetadata('mode', 'wall');
-        stats.setTaskOwner('t1', 1, 'A');
-        stats.setTaskOwner('t2', 1, 'A');
 
-        // t1's dwell block is [0, 20); t2's is [10, 30) -- they overlap for
-        // [10, 20), so their union is [0, 30) = 30, not the naive sum (40).
-        stats.update(1, 'A', [frame('loop')], 20);
-        stats.updateTaskStack('t1', [frame('worker')], 20); // clock=20, weight=20
-        stats.update(1, 'A', [frame('loop')], 10);
-        stats.updateTaskStack('t2', [frame('worker')], 20); // clock=30, weight=20
+        // t1 is alive over [0, 30), t2 over [20, 30) -- they overlap for
+        // [20, 30), so their union is [0, 30) = 30, not the naive sum (40).
+        at(stats, 't1', [frame('worker')]);
+        sample(stats, 20);
+        at(stats, 't2', [frame('worker')]);
+        sample(stats, 10);
         stats.refresh();
 
         const shape = findShapeNode(stats, '1:A');
@@ -1106,15 +1095,14 @@ suite('AustinStats — task shape merging in the main flamegraph', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setMetadata('mode', 'wall');
-        stats.setTaskOwner('t1', 1, 'A');
-        stats.setTaskOwner('t2', 1, 'A');
 
-        // t1's dwell block is [0, 20); t2's is [20, 40) -- back-to-back,
-        // no overlap, so the union equals the sum (40).
-        stats.update(1, 'A', [frame('loop')], 20);
-        stats.updateTaskStack('t1', [frame('worker')], 20); // clock=20, weight=20
-        stats.update(1, 'A', [frame('loop')], 20);
-        stats.updateTaskStack('t2', [frame('worker')], 20); // clock=40, weight=20
+        // t1 over [0, 20), t2 over [20, 40) -- back-to-back, no overlap, so
+        // the union equals the sum (40).
+        at(stats, 't1', [frame('worker')]);
+        sample(stats, 20);
+        stats.closeTask('t1');
+        at(stats, 't2', [frame('worker')]);
+        sample(stats, 20);
         stats.refresh();
 
         const shape = findShapeNode(stats, '1:A');
@@ -1122,37 +1110,31 @@ suite('AustinStats — task shape merging in the main flamegraph', () => {
         assert.strictEqual(shape!.value, 40);
     });
 
-    test('the same concurrent overlap is NOT deduplicated in CPU-time mode -- summed as-is', () => {
+    test('in CPU-time mode only running time counts, each sample to the one task running', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setMetadata('mode', 'cpu');
-        stats.setTaskOwner('t1', 1, 'A');
-        stats.setTaskOwner('t2', 1, 'A');
 
-        // Same overlapping windows as the wall-time test above ([0,20) and
-        // [10,30)) -- but CPU time is already exclusive per thread (only
-        // one task can be on-CPU at once), so deduplicating here would be
-        // wrong; the value should be the plain sum (40), matching what
-        // Austin actually measured for each.
-        stats.update(1, 'A', [frame('loop')], 20);
-        stats.updateTaskStack('t1', [frame('worker')], 20);
-        stats.update(1, 'A', [frame('loop')], 10);
-        stats.updateTaskStack('t2', [frame('worker')], 20);
+        at(stats, 't1', [frame('worker')]);
+        at(stats, 't2', [frame('worker')]);
+        sample(stats, 20, 1, 'A', 't1');
+        sample(stats, 10, 1, 'A', 't2');
+        sample(stats, 5);                // neither running: no task time
         stats.refresh();
 
         const shape = findShapeNode(stats, '1:A');
         assert.ok(shape);
-        assert.strictEqual(shape!.value, 40);
+        assert.strictEqual(shape!.value, 30);
     });
 
     test('a task instance never seen concurrently with another keeps its own exact value', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setMetadata('mode', 'wall');
-        stats.setTaskOwner('t1', 1, 'A');
 
-        stats.update(1, 'A', [frame('loop')], 50);
-        stats.updateTaskStack('t1', [frame('worker')], 20); // clock=50, weight=20 -> [30,50)
+        sample(stats, 30);
+        at(stats, 't1', [frame('worker')]);
+        sample(stats, 20);               // [30, 50)
         stats.refresh();
 
         const shape = findShapeNode(stats, '1:A');
@@ -1166,13 +1148,12 @@ suite('AustinStats — task shape merging in the main flamegraph', () => {
         stats.setMetadata('mode', 'wall');
         stats.setTaskName('t1', 'alpha');
         stats.setTaskName('t2', 'beta');
-        stats.setTaskOwner('t1', 1, 'A');
-        stats.setTaskOwner('t2', 1, 'A');
 
-        stats.update(1, 'A', [frame('loop')], 20);
-        stats.updateTaskStack('t1', [frame('worker')], 20);
-        stats.update(1, 'A', [frame('loop')], 20);
-        stats.updateTaskStack('t2', [frame('worker')], 20);
+        at(stats, 't1', [frame('worker')]);
+        sample(stats, 20);
+        stats.closeTask('t1');
+        at(stats, 't2', [frame('worker')]);
+        sample(stats, 20);
         stats.refresh();
 
         const processNode = stats.hierarchy.children.find(c => c.key === 'Process 1')!;
@@ -1193,7 +1174,7 @@ suite('AustinStats — task shape merging in the main flamegraph', () => {
 // ---------------------------------------------------------------------------
 suite('AustinStats — task shape merging: single-child blend vs. concurrent shim', () => {
 
-    const frame = (scope: string, line = 1) => ({ module: '/mod.py', scope, line });
+    const frame = taskFrame;
 
     // "parent" is a genuine root task (no waiter) so it always anchors
     // directly under the thread's own last frame (resolveTaskParent's
@@ -1210,14 +1191,12 @@ suite('AustinStats — task shape merging: single-child blend vs. concurrent shi
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setMetadata('mode', 'wall');
-        stats.setTaskOwner('parent', 1, 'A');
         stats.updateTaskWaiter('child', 'parent');
 
-        stats.update(1, 'A', [frame('loop')], 20);
-        stats.updateTaskStack('parent', [frame('outer')], 20); // clock=20 -> [0,20)
-        stats.setTaskOwner('child', 1, 'A');
-        stats.update(1, 'A', [frame('loop')], 20);
-        stats.updateTaskStack('child', [frame('inner')], 20); // clock=40 -> [20,40)
+        at(stats, 'parent', [frame('outer')]);
+        sample(stats, 20);                      // parent [0,20)
+        at(stats, 'child', [frame('inner')]);
+        sample(stats, 20);                      // parent and child [20,40)
         stats.refresh();
 
         const parent = rootTaskNode(stats);
@@ -1235,20 +1214,15 @@ suite('AustinStats — task shape merging: single-child blend vs. concurrent shi
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setMetadata('mode', 'wall');
-        stats.setTaskOwner('parent', 1, 'A');
         stats.updateTaskWaiter('childA', 'parent');
         stats.updateTaskWaiter('childB', 'parent');
 
-        stats.update(1, 'A', [frame('loop')], 20);
-        stats.updateTaskStack('parent', [frame('outer')], 20); // clock=20 -> [0,20)
-        stats.setTaskOwner('childA', 1, 'A');
-        stats.setTaskOwner('childB', 1, 'A');
-        // Both children observed within the SAME later window -- genuinely
-        // concurrent (childA: [20,40), childB: [30,50), overlapping).
-        stats.update(1, 'A', [frame('loop')], 20);
-        stats.updateTaskStack('childA', [frame('workA')], 20); // clock=40 -> [20,40)
-        stats.update(1, 'A', [frame('loop')], 10);
-        stats.updateTaskStack('childB', [frame('workB')], 20); // clock=50 -> [30,50)
+        at(stats, 'parent', [frame('outer')]);
+        sample(stats, 20);                      // parent [0,20)
+        // Both children alive over the same later window -- genuinely concurrent.
+        at(stats, 'childA', [frame('workA')]);
+        at(stats, 'childB', [frame('workB')]);
+        sample(stats, 20);                      // all three [20,40)
         stats.refresh();
 
         const parent = rootTaskNode(stats);
@@ -1265,7 +1239,6 @@ suite('AustinStats — task shape merging: single-child blend vs. concurrent shi
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setMetadata('mode', 'wall');
-        stats.setTaskOwner('parent', 1, 'A');
         // Three DIFFERENT children, all sharing "parent" as their waiter --
         // but strictly one at a time, never overlapping, like a loop that
         // awaits a fresh task each iteration.
@@ -1273,17 +1246,13 @@ suite('AustinStats — task shape merging: single-child blend vs. concurrent shi
         stats.updateTaskWaiter('child2', 'parent');
         stats.updateTaskWaiter('child3', 'parent');
 
-        stats.update(1, 'A', [frame('loop')], 10);
-        stats.updateTaskStack('parent', [frame('outer')], 10); // [0,10)
-        stats.setTaskOwner('child1', 1, 'A');
-        stats.update(1, 'A', [frame('loop')], 10);
-        stats.updateTaskStack('child1', [frame('worker')], 10); // [10,20)
-        stats.setTaskOwner('child2', 1, 'A');
-        stats.update(1, 'A', [frame('loop')], 10);
-        stats.updateTaskStack('child2', [frame('worker')], 10); // [20,30)
-        stats.setTaskOwner('child3', 1, 'A');
-        stats.update(1, 'A', [frame('loop')], 10);
-        stats.updateTaskStack('child3', [frame('worker')], 10); // [30,40)
+        at(stats, 'parent', [frame('outer')]);
+        sample(stats, 10);                      // [0,10)
+        for (const child of ['child1', 'child2', 'child3']) {
+            at(stats, child, [frame('worker')]);
+            sample(stats, 10);                  // [10,20), [20,30), [30,40)
+            stats.closeTask(child);
+        }
         stats.refresh();
 
         const parent = rootTaskNode(stats);
@@ -1296,7 +1265,7 @@ suite('AustinStats — task shape merging: single-child blend vs. concurrent shi
         const worker = parent.children.find(c => c.key === '/mod.py:worker')!;
         assert.ok(worker, 'expected the repeated single-child occurrences to blend in');
         assert.strictEqual(worker.kind, 'frame');
-        assert.strictEqual(worker.value, 30, 'the three non-overlapping [10,20)+[20,30)+[30,40) windows sum without deduplication');
+        assert.strictEqual(worker.value, 30, 'the three non-overlapping windows sum without deduplication');
     });
 });
 
@@ -1314,7 +1283,8 @@ suite('AustinStats — task shape merging: single-child blend vs. concurrent shi
 // owns (see finalizeTaskNodes/resolveTaskParent).
 suite('AustinStats — concurrent root tasks', () => {
 
-    const frame = (scope: string, line = 1) => ({ module: '/mod.py', scope, line });
+    const frame = taskFrame;
+    const moduleSample = (stats: AustinStats, metric: number) => sample(stats, metric, 1, 'A', null, [frame('module')]);
 
     function threadLeaf(stats: AustinStats): FlameNode {
         const processNode = stats.hierarchy.children.find(c => c.key === 'Process 1')!;
@@ -1326,10 +1296,9 @@ suite('AustinStats — concurrent root tasks', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setMetadata('mode', 'wall');
-        stats.setTaskOwner('root', 1, 'A');
 
-        stats.update(1, 'A', [frame('module')], 20);
-        stats.updateTaskStack('root', [frame('work')], 20); // clock=20 -> [0,20)
+        at(stats, 'root', [frame('work')]);
+        moduleSample(stats, 20);
         stats.refresh();
 
         const leaf = threadLeaf(stats);
@@ -1344,13 +1313,11 @@ suite('AustinStats — concurrent root tasks', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setMetadata('mode', 'wall');
-        stats.setTaskOwner('rootA', 1, 'A');
-        stats.setTaskOwner('rootB', 1, 'A');
 
-        stats.update(1, 'A', [frame('module')], 20);
-        stats.updateTaskStack('rootA', [frame('workA')], 20); // clock=20 -> [0,20)
-        stats.update(1, 'A', [frame('module')], 10);
-        stats.updateTaskStack('rootB', [frame('workB')], 20); // clock=30 -> [10,30) -- overlaps rootA's [0,20)
+        at(stats, 'rootA', [frame('workA')]);
+        moduleSample(stats, 20);                // rootA [0,20)
+        at(stats, 'rootB', [frame('workB')]);
+        moduleSample(stats, 10);                // both [20,30) -- overlapping
         stats.refresh();
 
         const leaf = threadLeaf(stats);
@@ -1370,13 +1337,13 @@ suite('AustinStats — concurrent root tasks', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setMetadata('mode', 'wall');
-        stats.setTaskOwner('rootA', 1, 'A');
-        stats.setTaskOwner('rootB', 1, 'A');
 
-        stats.update(1, 'A', [frame('module')], 10);
-        stats.updateTaskStack('rootA', [frame('workA')], 10); // clock=10 -> [0,10)
-        stats.update(1, 'A', [frame('module')], 10);
-        stats.updateTaskStack('rootB', [frame('workB')], 5); // clock=20 -> [15,20) -- strictly after [0,10)
+        at(stats, 'rootA', [frame('workA')]);
+        moduleSample(stats, 10);                // rootA [0,10)
+        stats.closeTask('rootA');
+        moduleSample(stats, 5);
+        at(stats, 'rootB', [frame('workB')]);
+        moduleSample(stats, 5);                 // rootB [15,20) -- strictly after
         stats.refresh();
 
         const leaf = threadLeaf(stats);

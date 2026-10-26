@@ -168,7 +168,7 @@ function sumLength(intervals: [number, number][]): number {
 // future rename can't silently desync them.
 const TASKS_ROOT_KEY = "__tasks__";
 
-// A task owner is recorded as `${pid}:${tid}` (see setTaskOwner) -- split
+// A task owner is recorded as `${pid}:${tid}` (see updateTaskPosition) -- split
 // back into its parts wherever a group needs to display or navigate to the
 // owning process/thread (getTaskForest, getTaskTraces). `tid` itself can
 // legitimately contain further colons (see the iid:tid composite key built
@@ -194,8 +194,8 @@ export class AustinStats implements AustinStats {
     // like <module> the moment anything else attaches there directly.
     private threadContainers: Map<string, FlameNode> = new Map();
     private taskLeaves: Map<string, FlameNode> = new Map();
-    // Thread key (`${pid}:${tid}`) that last captured this task's coroutine
-    // chain. See setTaskOwner/resolveTaskParent.
+    // Thread key (`${pid}:${tid}`) of the sample this task was last reported
+    // with. See updateTaskPosition/resolveTaskParent.
     private taskOwner: Map<string, string> = new Map();
     // Shape-merge state for the main flamegraph (see finalizeTaskNodes) --
     // rebuilt fresh every call, never read across refreshes. attachedTaskRoots
@@ -235,12 +235,17 @@ export class AustinStats implements AustinStats {
     // concurrent) top-level task attaches its root task(s) directly there
     // instead.
     private threadTaskShim: Map<string, FlameNode> = new Map();
-    // Position on the overallTotal timeline (see updateTaskStack) at which a
-    // task was first observed, and most recently observed. There's no
-    // explicit "task ended" event on the wire, so the last position we ever
-    // assigned dwell time to is the best available estimate of when it did.
+    // Position on its owning thread's clock (see threadTotal) at which a task
+    // was first reported, and up to which it was last seen alive: the end of
+    // the last sample it was given time for, or its closing report.
     private taskFirstSeen: Map<string, number> = new Map();
     private taskLastSeen: Map<string, number> = new Map();
+    // The current position (frames) of every task still alive, i.e. reported
+    // and not closed yet. See updateTaskPosition and accrueTaskTime.
+    private taskPosition: Map<string, FrameObject[]> = new Map();
+    // Time of the samples in which a task was the running one. See
+    // accrueTaskTime and buildTaskSummary.
+    private taskRunningTime: Map<string, number> = new Map();
     // Per-thread clock (`${pid}:${tid}` -> cumulative own metric), advanced
     // only by that thread's own regular samples -- see update(). Unlike
     // overallTotal (shared across every thread AND every task's own dwell
@@ -248,11 +253,6 @@ export class AustinStats implements AustinStats {
     // isn't skewed by unrelated threads' or tasks' activity, matching how
     // computeGCSpans already normalizes per thread.
     private threadTotal: Map<string, number> = new Map();
-    // Owning thread's own clock (see threadTotal) at the moment setTaskOwner
-    // FIRST ran for a task -- i.e. Austin's own first sighting of it, which
-    // can be well before its first real (non-null-elapsed) dwell flush ever
-    // reaches updateTaskStack. See the elapsed===null branch there.
-    private taskDiscoveredAt: Map<string, number> = new Map();
 
     public constructor() {
         this.locationMap = new Map();
@@ -306,7 +306,8 @@ export class AustinStats implements AustinStats {
         this.taskFirstSeen.clear();
         this.taskLastSeen.clear();
         this.threadTotal.clear();
-        this.taskDiscoveredAt.clear();
+        this.taskPosition.clear();
+        this.taskRunningTime.clear();
     }
 
     // This task's own PRIVATE accumulation -- never attached to the live
@@ -347,7 +348,7 @@ export class AustinStats implements AustinStats {
 
     // Raw [start, end] windows (in the owning thread's clock units --
     // see threadTotal) this task instance contributed at this PRIVATE
-    // node, one per updateTaskStack call -- NOT yet deduplicated; kept out
+    // node, one per sample it was given time for -- NOT yet deduplicated; kept out
     // of FlameNode itself (which gets serialized to the webview on every
     // refresh) since this is purely finalize-time bookkeeping, consumed by
     // finalizeTaskNodes' shape-merge to compute a coverage union instead of
@@ -358,116 +359,58 @@ export class AustinStats implements AustinStats {
         this.taskNodeIntervals.getDefault(node, () => []).push(interval);
     }
 
-    // Records the coroutine stack of a suspended task (from MOJO_TASK_STACK),
-    // weighted by the real dwell time Austin accumulated at that frame
-    // (trailing MOJO_METRIC_TIME) when the capture carries one. Older
-    // captures never emit that trailing metric, so fall back to approximating
-    // one observation as one sampling interval -- keeping it on the same time
-    // scale as the rest of the tree instead of an arbitrary unit of 1.
-    public updateTaskStack(taskId: string, frames: FrameObject[], elapsed: number | null) {
-        const weight = elapsed !== null ? elapsed : (Number(this.metadata.get("interval")) || 1);
-
-        // Position is the owning thread's OWN clock (see threadTotal), not
-        // overallTotal: overallTotal also advances from every task's own
-        // dwell weight below, in wire order, which has nothing to do with
-        // real chronology -- stamping positions from it made concurrent
-        // tasks' spans drift apart and overlap arbitrarily. A task with no
-        // resolved owner yet (e.g. the very first observation, before
-        // setTaskOwner runs) has no thread clock to read; it lands in the
-        // synthetic orphaned trace group anyway, so overallTotal is an
-        // acceptable fallback there.
-        const ownerKey = this.taskOwner.get(taskId);
-        const clock = ownerKey !== undefined ? (this.threadTotal.get(ownerKey) ?? 0) : this.overallTotal;
-
-        // `weight` is the dwell duration Austin measured at the frames this
-        // call reports (see the comment above), ending "now" (this flush's
-        // clock reading) -- so the block it describes actually STARTED
-        // `weight` units earlier, not at `clock`. This matters a lot: Austin
-        // only emits a new MOJO_TASK_STACK when a task's coroutine identity
-        // changes (see _py_asyncio__emit_task's fingerprint check), so a task
-        // blocked at the exact same await point for a long stretch (e.g. the
-        // root task sitting in gather()) gets exactly ONE flush, often only
-        // at eviction -- without this back-computed start, that single huge
-        // dwell would collapse to a zero-width point at the very end instead
-        // of the long span it actually was.
-        // Unclamped for the interval recorded below: unionLength/sumLength
-        // only care about relative overlaps and (end - start) lengths, so
-        // a negative start is harmless there -- but clamping it away HERE
-        // would silently shrink the interval's own length below `weight`
-        // whenever clock < weight (e.g. a task's very first observation,
-        // before its owning thread's clock has advanced much), quietly
-        // losing weight from the shared merge's value computation.
-        const rawBlockStart = clock - weight;
-        const isFirstObservation = !this.taskFirstSeen.has(taskId);
-
-        // elapsed === null means Austin never got to report a REAL measured
-        // dwell for this task's first-ever data point at all -- typically
-        // because its identity never changed again before sampling stopped
-        // (e.g. a task parked forever at the same `await`, like an event
-        // loop's own driving coroutine), so this is really just the
-        // end-of-stream carry flush (see mojo.ts's flushTaskStackCarry) for
-        // a task discovered long ago, and `weight` (hence rawBlockStart) is
-        // a meaningless one-interval placeholder, not a measurement --
-        // back-computing from it collapses the task's whole (possibly very
-        // long) life into a sliver right at the end. taskDiscoveredAt,
-        // stamped independently the moment setTaskOwner first ran for it,
-        // is a real clock reading and a far better lower bound here --
-        // applied to the interval itself (not just taskFirstSeen below), so
-        // the shape-merge in finalizeTaskNodes doesn't ALSO collapse this
-        // task's contribution to the main flamegraph into that same sliver.
-        const discoveredAt = this.taskDiscoveredAt.get(taskId);
-        const intervalStart = isFirstObservation && elapsed === null && discoveredAt !== undefined
-            ? Math.min(rawBlockStart, discoveredAt) : rawBlockStart;
-
-        // The same correction has to widen the actual dwell weight too, not
-        // just the interval's start: `weight` is what lands in taskNode.value
-        // (and, below, overallTotal/updateLineMap) -- the Tasks view and the
-        // editor gutter read taskNode.value directly, so leaving it at the
-        // meaningless placeholder while only the interval gets widened would
-        // make those views show a near-zero contribution for a task whose
-        // merged flamegraph node (built from the widened interval) shows a
-        // large span.
-        const correctedWeight = intervalStart < rawBlockStart ? clock - intervalStart : weight;
-
-        this.updateTaskFrames(taskId, this.getOrCreateTaskNode(taskId), frames, correctedWeight, [intervalStart, clock]);
-        if (isFirstObservation) {
-            this.taskFirstSeen.set(taskId, Math.max(0, intervalStart));
+    // A task's new position (from MOJO_TASK_STACK): the frames it is at, as
+    // reported with a sample of its owning thread. It is then given time at
+    // that position by that thread's samples, until its next report or its
+    // closing (see accrueTaskTime).
+    public updateTaskPosition(taskId: string, frames: FrameObject[], pid: number, tid: string) {
+        const key = `${pid}:${tid}`;
+        this.taskOwner.set(taskId, key);
+        this.taskPosition.set(taskId, frames);
+        this.getOrCreateTaskNode(taskId);
+        if (!this.taskFirstSeen.has(taskId)) {
+            const clock = this.threadTotal.get(key) ?? 0;
+            this.taskFirstSeen.set(taskId, clock);
+            this.taskLastSeen.set(taskId, clock);
         }
-        this.taskLastSeen.set(taskId, clock);
+    }
 
-        // A task's coroutine frames are real source lines just like any
-        // regular sample's -- feed them into the same per-line own/total map
-        // (and the same overallTotal denominator those fractions are taken
-        // against) so the editor gutter (setLinesHeat, driven by
-        // locationMap) reflects time spent suspended in a task exactly like
-        // it does for a thread's own stack. There's normally no overlap with
-        // a thread's own regular samples: while a task sits suspended, the
-        // thread's own top-of-stack is the event loop (base_events.py,
-        // selectors.py, ...), never the task's own coroutine code -- the two
-        // views cover disjoint source lines in the common case.
-        if (correctedWeight > 0) {
-            this.overallTotal += correctedWeight;
+    // A task is gone (an empty MOJO_TASK_STACK): it gets no more time.
+    public closeTask(taskId: string) {
+        this.taskPosition.delete(taskId);
+    }
+
+    // Gives a sample's time to the tasks its thread holds, at their current
+    // position: to the task the thread is running, as running time, and to
+    // every other one, as time spent awaiting -- but in CPU mode, where a task
+    // that isn't running isn't using the CPU. Each contribution is the
+    // sample's own window on the thread's clock, starting at `clock`. Task
+    // time is never added to overallTotal: it is the same time the thread's
+    // own samples already account for, seen per task.
+    private accrueTaskTime(threadKey: string, runningTask: string | null, metric: number, clock: number) {
+        if (metric <= 0 || this.taskPosition.size === 0) {
+            return;
         }
-        this.updateLineMap(frames, correctedWeight);
+        const cpuOnly = this.metadata.get("mode") === "cpu";
+        const interval: [number, number] = [clock, clock + metric];
+        for (const [taskId, frames] of this.taskPosition) {
+            if (this.taskOwner.get(taskId) !== threadKey || (cpuOnly && taskId !== runningTask)) {
+                continue;
+            }
+            this.updateTaskFrames(taskId, this.getOrCreateTaskNode(taskId), frames, metric, interval);
+            this.taskLastSeen.set(taskId, clock + metric);
+            if (taskId === runningTask) {
+                this.taskRunningTime.set(taskId, (this.taskRunningTime.get(taskId) ?? 0) + metric);
+            }
+            // A task's frames are real source lines like any regular sample's,
+            // but not part of its thread's own stack: feed them to the editor
+            // gutter too.
+            this.updateLineMap(frames, metric);
+        }
     }
 
     public setTaskName(taskId: string, name: string) {
         this.taskNames.set(taskId, name);
-    }
-
-    // Records the thread whose MOJO_STACK...next-MOJO_STACK window most
-    // recently captured this task's coroutine chain -- a task's owning
-    // thread isn't tagged on the wire, so this is recovered from wire
-    // position (see mojo.ts's flushTaskStack). Used as a fallback anchor by
-    // resolveTaskParent for tasks with no resolvable waiter -- e.g. a
-    // top-level task like the one asyncio.run() drives, which has nothing
-    // awaiting it directly.
-    public setTaskOwner(taskId: string, pid: number, tid: string) {
-        const key = `${pid}:${tid}`;
-        this.taskOwner.set(taskId, key);
-        if (!this.taskDiscoveredAt.has(taskId)) {
-            this.taskDiscoveredAt.set(taskId, this.threadTotal.get(key) ?? 0);
-        }
     }
 
     public updateTaskWaiter(taskId: string, waiterId: string) {
@@ -950,11 +893,14 @@ export class AustinStats implements AustinStats {
     // (which attaches each task under the exact spine frame that awaits it,
     // for the flamegraph), this attaches a task directly under the task that
     // awaits it -- a task-only tree, independent of frames, mirroring
-    // AustinTask.awaiting on the server side. Own is this task's own
-    // coroutine time (taskNodesById's value, which never includes an awaited
-    // task's time -- those are separate nodes); total adds in every
-    // (transitively) awaited task's total, so a task blocked on slow
-    // children reads as slow itself, the usual self-vs-cumulative split.
+    // AustinTask.awaiting on the server side. Own is the time the task was
+    // running. Total is the task's own time (taskNodesById's value): how long
+    // it was alive, running or awaiting, which already covers the time it
+    // spent awaiting its children -- their own totals are not added on top,
+    // the same way a tower's width already spans whatever sits on it. In CPU
+    // mode a task's time is its running time alone, and the CPU its children
+    // used is not part of it, so there total does add every (transitively)
+    // awaited task's total, the CPU spent on the task's behalf.
     // Every node's own path-hash, computed the exact same way the flamegraph
     // webview computes it client-side (media/flamegraph.js's addPathKeys) --
     // same hashPath function, same root seed of 0, same node.key input --
@@ -1017,7 +963,7 @@ export class AustinStats implements AustinStats {
         const node: TaskSummary = {
             id: taskId,
             name: this.taskNames.get(taskId) ?? `Task ${taskId}`,
-            own: taskNode?.value ?? 0,
+            own: this.taskRunningTime.get(taskId) ?? 0,
             total: taskNode?.value ?? 0,
             file: leaf?.file,
             line: leaf?.line,
@@ -1033,10 +979,13 @@ export class AustinStats implements AustinStats {
             return node;
         }
         visiting.add(taskId);
+        const cpuOnly = this.metadata.get("mode") === "cpu";
         for (const childId of childrenOf.get(taskId) ?? []) {
             const childNode = this.buildTaskSummary(childId, childrenOf, visiting, frameKeys);
             node.children.push(childNode);
-            node.total += childNode.total;
+            if (cpuOnly) {
+                node.total += childNode.total;
+            }
         }
         visiting.delete(taskId);
 
@@ -1091,14 +1040,12 @@ export class AustinStats implements AustinStats {
         let end = Math.max(this.taskLastSeen.get(taskId) ?? start, start);
 
         // A task can never be observed to be active outside the window of
-        // whatever awaits it -- clip into the parent's own [start, end]. Two
-        // sparsely-flushed tasks (see the blockStart comment in
-        // updateTaskStack) can otherwise reconstruct to overlapping-but-
-        // inconsistent ranges, e.g. a child's own back-computed start
-        // clamped all the way to 0 while its parent's is a bit later --
-        // which would render as the child's bar sticking out to the left of
-        // its parent's, breaking the flame chart's basic nesting invariant
-        // (a child's bar is always inside its parent's).
+        // whatever awaits it -- clip into the parent's own [start, end]. A
+        // child on another thread has its range on that thread's clock, which
+        // may not line up with its parent's -- which would render as the
+        // child's bar sticking out of its parent's, breaking the flame chart's
+        // basic nesting invariant (a child's bar is always inside its
+        // parent's).
         if (bounds) {
             start = Math.min(Math.max(start, bounds.start), bounds.end);
             end = Math.min(Math.max(end, bounds.start), bounds.end);
@@ -1328,11 +1275,18 @@ export class AustinStats implements AustinStats {
         this.metadata.set(key, value);
     }
 
-    public update(pid: number, tid: string, frames: FrameObject[], metric: number, gc: boolean = false) {
+    // `runningTask` is the task the thread was running at this sample, if any
+    // (MOJO_TASK_RUNNING). Its frames aren't in `frames`, the thread's own.
+    public update(
+        pid: number, tid: string, frames: FrameObject[], metric: number, gc: boolean = false,
+        runningTask: string | null = null,
+    ) {
         if (metric > 0) {
             this.overallTotal += metric;
             const threadKey = `${pid}:${tid}`;
-            this.threadTotal.set(threadKey, (this.threadTotal.get(threadKey) ?? 0) + metric);
+            const clock = this.threadTotal.get(threadKey) ?? 0;
+            this.accrueTaskTime(threadKey, runningTask, metric, clock);
+            this.threadTotal.set(threadKey, clock + metric);
         }
 
         this.gcEvents.push({

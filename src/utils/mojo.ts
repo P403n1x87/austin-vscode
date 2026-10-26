@@ -33,21 +33,13 @@ const MOJO_EVENT = Object.freeze({
     "stackRepeat": 13,
     "taskStack": 14,
     "taskWaiter": 15,
+    "taskRunning": 16,
 });
 
-interface PendingTaskStack {
-    taskId: bigint;
+interface PendingTaskReport {
+    taskId: string;
+    frameCount: number;
     frames: FrameObject[];
-    // Real dwell time (MOJO_METRIC_TIME), when the capture is new enough to
-    // carry one after the frame sequence. Per the MOJO_TASK_STACK doc comment
-    // in austin's mojo.h, this describes how long the task dwelled at the
-    // frame it just *left* -- i.e. the *previous* MOJO_TASK_STACK block for
-    // this task, not this one's `frames` (Austin can only ever unwind the
-    // task's current live frame chain, so the metric it can flush at that
-    // point necessarily lags one block behind). Older captures never emit
-    // this at all, so this stays null and the caller falls back to an
-    // interval-based approximation applied directly to `frames`.
-    metric: bigint | null;
 }
 
 interface FrameData {
@@ -99,163 +91,56 @@ function resolveAcrossPids<T>(cache: Map<string, T>, pid: bigint | null, key: bi
     return undefined;
 }
 
-// A task's id on the wire is really just the awaitable object's raw memory
-// address, which CPython's allocator is free to hand to a brand new,
-// unrelated Task once the original is freed -- Austin faithfully reports
-// both occurrences under that same numeric id. Using the raw id as-is
-// throughout would make the model see a SECOND task's data as more data
-// for the FIRST (now-dead) one -- e.g. its waiter set gaining a bogus extra
-// entry, which can make an unrelated later task get misattributed as a
-// child of a task that finished long ago.
-//
-// close() is called on the empty-frames closing/eviction signal (see the
-// MOJO_TASK_STACK doc comment in austin's mojo.h) -- the wire's own
-// "this task is done" signal -- and bumps a generation counter for that
-// raw id; resolve() folds the generation into the id whenever it's
-// nonzero, so a later reuse of the same raw address resolves to a
-// distinct logical id instead of colliding with the original task's.
-class TaskIdRemapper {
-    private generation = new Map<string, number>();
+// Reads MOJO_TASK_STACK reports, the same way for MojoParser (pull,
+// whole-buffer) and StreamingMojoParser (push, chunked). A report is a task's
+// new position: its header gives the task, its name and how many of the
+// frame references that follow are its frames; the thread's own follow after
+// those. It carries no time: the time a task spends at a position is the time
+// of its thread's samples while it holds it (see AustinStats.update). A report
+// with no frames closes the task. Task ids are opaque, and unique to a task.
+class TaskReportReader {
+    private pending: PendingTaskReport | null = null;
 
-    resolve(rawId: string): string {
-        const gen = this.generation.get(rawId) ?? 0;
-        return gen === 0 ? rawId : `${rawId}#${gen}`;
+    begin(
+        taskId: bigint, nameKey: bigint, frameCount: bigint,
+        stringRefs: Map<string, string>, currentPid: bigint | null, stats: AustinStats,
+    ): void {
+        const id = taskId.toString();
+        if (nameKey !== 0n) {
+            const name = resolveAcrossPids(stringRefs, currentPid, nameKey);
+            if (name !== undefined) {
+                stats.setTaskName(id, name);
+            }
+        }
+        if (frameCount === 0n) {
+            stats.closeTask(id);
+            this.pending = null;
+        } else {
+            this.pending = { taskId: id, frameCount: Number(frameCount), frames: [] };
+        }
     }
 
-    close(rawId: string): void {
-        this.generation.set(rawId, (this.generation.get(rawId) ?? 0) + 1);
-    }
-}
-
-// Everything about buffering and flushing one in-flight MOJO_TASK_STACK block
-// -- the part of task-graph parsing that's identical between MojoParser
-// (pull, whole-buffer) and StreamingMojoParser (push, chunked): both just
-// need somewhere to accumulate frames between a taskStack event and whatever
-// closes it (the next taskStack/taskWaiter/stack event, a trailing
-// MOJO_METRIC_TIME, or end of stream), and the exact same rules for when a
-// flush should actually report data to AustinStats (see flush's own
-// comments). The two parsers differ in how they consume bytes, not in any of
-// this -- that consumption-mechanics difference is why they still each drive
-// this class from their own event-handling loop instead of sharing that too.
-class TaskStackTracker {
-    private pending: PendingTaskStack | null = null;
-    // Per task, the most recent MOJO_TASK_STACK block's frames that haven't
-    // yet been weighted -- they're waiting on the *next* block's trailing
-    // metric, which describes dwell time at this (previous) block, not its
-    // own. See PendingTaskStack.metric. Keyed by the RAW id: purely a
-    // parsing-internal buffer for the CURRENT incarnation, already correctly
-    // cleared on that incarnation's closing signal.
-    private carry = new Map<string, FrameObject[]>();
-    private taskIds = new TaskIdRemapper();
-
-    get isPending(): boolean {
-        return this.pending !== null;
-    }
-
-    // Resolves a raw wire task id to its logical (generation-aware) id --
-    // see TaskIdRemapper. Used directly for MOJO_TASK_WAITER, which has no
-    // frames of its own to buffer.
-    resolve(rawId: string): string {
-        return this.taskIds.resolve(rawId);
-    }
-
-    // Appends to the pending block if one is open; returns false (having done
-    // nothing) if there isn't one, so the caller falls back to its own
-    // regular-sample handling.
-    pushFrame(frame: FrameObject): boolean {
+    // Takes the frame if a report is still waiting for frames, returning false
+    // (having done nothing) otherwise, so the caller adds it to the thread's
+    // own stack instead. A task's owning thread is the one whose sample the
+    // report comes with.
+    pushFrame(
+        frame: FrameObject, currentPid: bigint | null, currentIid: bigint | null, currentTid: string | null,
+        stats: AustinStats,
+    ): boolean {
         if (!this.pending) {
             return false;
         }
         this.pending.frames.push(frame);
+        if (this.pending.frames.length >= this.pending.frameCount) {
+            if (currentPid !== null) {
+                stats.updateTaskPosition(
+                    this.pending.taskId, this.pending.frames, Number(currentPid), `${currentIid}:${currentTid}`,
+                );
+            }
+            this.pending = null;
+        }
         return true;
-    }
-
-    // Starts a new pending block for taskId. The caller must flush() any
-    // previous one first (a MOJO_TASK_STACK's own frames are for THIS
-    // incarnation, not whatever was still open).
-    begin(taskId: bigint, nameKey: bigint, stringRefs: Map<string, string>, currentPid: bigint | null, stats: AustinStats): void {
-        if (nameKey !== 0n) {
-            const name = resolveAcrossPids(stringRefs, currentPid, nameKey);
-            if (name !== undefined) {
-                stats.setTaskName(this.resolve(taskId.toString()), name);
-            }
-        }
-        this.pending = { taskId, frames: [], metric: null };
-    }
-
-    // A trailing MOJO_METRIC_TIME always closes the pending block immediately
-    // (see the taskStack/time event handling in both parsers): on the wire,
-    // nothing else task-related necessarily follows it before the enclosing
-    // sample's own regular frames, which must not get misattributed into it.
-    setMetricAndFlush(value: bigint, currentPid: bigint | null, currentIid: bigint | null, currentTid: string | null, stats: AustinStats): void {
-        if (!this.pending) {
-            return;
-        }
-        this.pending.metric = value;
-        this.flush(currentPid, currentIid, currentTid, stats);
-    }
-
-    flush(currentPid: bigint | null, currentIid: bigint | null, currentTid: string | null, stats: AustinStats): void {
-        if (!this.pending) {
-            return;
-        }
-        const rawId = this.pending.taskId.toString();
-        const taskId = this.resolve(rawId);
-        const isClosing = this.pending.frames.length === 0;
-        // A task's owning thread isn't tagged on the wire: it's implicit in
-        // position, since a MOJO_TASK_STACK only ever arrives bracketed
-        // within the MOJO_STACK it belongs to and the next one -- so
-        // whichever sample is current right now, before the next MOJO_STACK
-        // reassigns it, is this task's owner. Skipped for an empty frame
-        // sequence (the closing/eviction flush, see below): there's no new
-        // content there, so no owner to (re)attribute.
-        if (this.pending.frames.length > 0 && currentPid !== null) {
-            stats.setTaskOwner(taskId, Number(currentPid), `${currentIid}:${currentTid}`);
-        }
-        if (this.pending.metric === null) {
-            // No real timing on the wire at all (older capture): weight this
-            // single observation directly with the fallback approximation.
-            // Skip the empty-frame closing/eviction signal itself -- like the
-            // metric-carrying branch below, it has no new content to weight,
-            // and reporting it would inflate the task's duration by one
-            // bogus fallback-interval unit for nothing.
-            if (this.pending.frames.length > 0) {
-                stats.updateTaskStack(taskId, this.pending.frames, null);
-            }
-        } else {
-            const carried = this.carry.get(rawId);
-            if (carried) {
-                stats.updateTaskStack(taskId, carried, Number(this.pending.metric));
-            }
-            // An empty frame sequence is a closing signal (Austin flushing a
-            // task's final dwell time on eviction, see mojo.h's
-            // MOJO_TASK_STACK doc comment) -- nothing more will ever arrive
-            // for this task, so don't carry it forward as if it were a new,
-            // still-unweighted observation.
-            if (this.pending.frames.length > 0) {
-                this.carry.set(rawId, this.pending.frames);
-            } else {
-                this.carry.delete(rawId);
-            }
-        }
-        // Bump AFTER reporting this flush (above), which must still resolve
-        // to the incarnation that's closing -- only a LATER reference to
-        // this same raw id should see a fresh one.
-        if (isClosing) {
-            this.taskIds.close(rawId);
-        }
-        this.pending = null;
-    }
-
-    // Any still-carried frames at end of stream are the last frame chain
-    // ever observed for that task -- its true dwell time was never flushed
-    // (the task was still there when sampling stopped), so fall back to the
-    // interval-based approximation rather than losing it.
-    flushCarry(stats: AustinStats): void {
-        for (const [rawId, frames] of this.carry) {
-            stats.updateTaskStack(this.resolve(rawId), frames, null);
-        }
-        this.carry.clear();
     }
 }
 
@@ -399,7 +284,9 @@ export class MojoParser {
 
         let previousStacks = new Map<string, Array<FrameObject>>();
         let invalidFrame = false;
-        const taskTracker = new TaskStackTracker();
+        // The task the current sample's thread is running (MOJO_TASK_RUNNING).
+        let currentRunningTask: string | null = null;
+        const taskReports = new TaskReportReader();
 
         try {
             while (true) {
@@ -414,7 +301,6 @@ export class MojoParser {
                         break;
 
                     case MOJO_EVENT.stack: {
-                        taskTracker.flush(currentPid, currentIid, currentTid, stats);
                         // Finish the previous stack and update the stats
                         if (currentPid !== null) {
                             const metric = Number(mode === "memory" ? currentMemoryMetric! : currentTimeMetric!);
@@ -424,6 +310,7 @@ export class MojoParser {
                                 currentStack,
                                 metric,
                                 currentGC,
+                                currentRunningTask,
                             );
                             // Save the current stack (without top native frames) for repeat/back-attribution
                             previousStacks.set(currentStackKey!, stripTopNativeFrames(currentStack));
@@ -437,6 +324,7 @@ export class MojoParser {
                         currentTimeMetric = null;
                         currentMemoryMetric = null;
                         currentGC = false;
+                        currentRunningTask = null;
 
                         break;
                     }
@@ -452,14 +340,12 @@ export class MojoParser {
                         break;
 
                     case MOJO_EVENT.invalidFrame:
-                        if (!taskTracker.pushFrame(specialFrame("INVALID"))) {
-                            if (previousStacks.has(currentStackKey!)) {
-                                // Back-attribution
-                                currentStack = previousStacks.get(currentStackKey!)!;
-                                invalidFrame = true;
-                            } else {
-                                currentStack.push(specialFrame("INVALID"));
-                            }
+                        if (previousStacks.has(currentStackKey!)) {
+                            // Back-attribution
+                            currentStack = previousStacks.get(currentStackKey!)!;
+                            invalidFrame = true;
+                        } else {
+                            currentStack.push(specialFrame("INVALID"));
                         }
                         break;
 
@@ -470,7 +356,7 @@ export class MojoParser {
                         if (frame === undefined) {
                             throw new Error("Invalid frame reference");
                         }
-                        if (!taskTracker.pushFrame(frame) && !invalidFrame) {
+                        if (!taskReports.pushFrame(frame, currentPid, currentIid, currentTid, stats) && !invalidFrame) {
                             currentStack.push(frame);
                         }
                         break;
@@ -478,7 +364,7 @@ export class MojoParser {
 
                     case MOJO_EVENT.kernelFrame: {
                         let kernelFrame = this.consumeKernel();
-                        if (!taskTracker.pushFrame(kernelFrame) && !invalidFrame) {
+                        if (!invalidFrame) {
                             currentStack.push(kernelFrame);
                         }
                         break;
@@ -491,15 +377,9 @@ export class MojoParser {
                     case MOJO_EVENT.idle:
                         break;
 
-                    case MOJO_EVENT.time: {
-                        const value = this.consumeVarInt();
-                        if (taskTracker.isPending) {
-                            taskTracker.setMetricAndFlush(value, currentPid, currentIid, currentTid, stats);
-                        } else {
-                            currentTimeMetric = value;
-                        }
+                    case MOJO_EVENT.time:
+                        currentTimeMetric = this.consumeVarInt();
                         break;
-                    }
 
                     case MOJO_EVENT.memory:
                         currentMemoryMetric = this.consumeVarInt();
@@ -518,18 +398,26 @@ export class MojoParser {
                     case MOJO_EVENT.taskStack: {
                         const taskId = this.consumeVarInt();
                         const nameKey = this.consumeVarInt();
-                        taskTracker.flush(currentPid, currentIid, currentTid, stats);
-                        taskTracker.begin(taskId, nameKey, stringRefs, currentPid, stats);
+                        const frameCount = this.consumeVarInt();
+                        taskReports.begin(taskId, nameKey, frameCount, stringRefs, currentPid, stats);
                         break;
                     }
 
                     case MOJO_EVENT.taskWaiter: {
                         const taskId = this.consumeVarInt();
                         const waiterId = this.consumeVarInt();
-                        taskTracker.flush(currentPid, currentIid, currentTid, stats);
-                        stats.updateTaskWaiter(taskTracker.resolve(taskId.toString()), taskTracker.resolve(waiterId.toString()));
+                        // A waiter of 0 is no task: the task has no waiters any
+                        // more. Task forests record who ever awaited a task,
+                        // so there's nothing to add.
+                        if (waiterId !== 0n) {
+                            stats.updateTaskWaiter(taskId.toString(), waiterId.toString());
+                        }
                         break;
                     }
+
+                    case MOJO_EVENT.taskRunning:
+                        currentRunningTask = this.consumeVarInt().toString();
+                        break;
 
                     default:
                         throw new Error("Received unknown MOJO event");
@@ -537,8 +425,6 @@ export class MojoParser {
             }
         } catch (e) {
             if (e instanceof IteratorDone) {
-                taskTracker.flush(currentPid, currentIid, currentTid, stats);
-                taskTracker.flushCarry(stats);
                 // Finish the last stack and update the stats
                 if (currentPid !== null) {
                     const metric = Number(mode === "memory" ? currentMemoryMetric! : currentTimeMetric!);
@@ -548,6 +434,7 @@ export class MojoParser {
                         currentStack,
                         metric,
                         currentGC,
+                        currentRunningTask,
                     );
                 }
                 return;
@@ -577,7 +464,9 @@ export class StreamingMojoParser {
     private previousStacks = new Map<string, FrameObject[]>();
     private invalidFrame = false;
     private currentGC = false;
-    private taskTracker = new TaskStackTracker();
+    // The task the current sample's thread is running (MOJO_TASK_RUNNING).
+    private currentRunningTask: string | null = null;
+    private taskReports = new TaskReportReader();
 
     constructor(private readonly stats: AustinStats) { }
 
@@ -669,7 +558,6 @@ export class StreamingMojoParser {
                 const newPid = this.consumeVarInt();
                 const newIid = this.version! >= 3n ? this.consumeVarInt() : 0n;
                 const newTid = this.consumeString();
-                this.taskTracker.flush(this.currentPid, this.currentIid, this.currentTid, this.stats);
                 if (this.currentPid !== null) {
                     const metric = Number(this.mode === "memory" ? this.currentMemoryMetric! : this.currentTimeMetric!);
                     this.stats.update(
@@ -678,6 +566,7 @@ export class StreamingMojoParser {
                         this.currentStack,
                         metric,
                         this.currentGC,
+                        this.currentRunningTask,
                     );
                     this.previousStacks.set(this.currentStackKey!, stripTopNativeFrames(this.currentStack));
                 }
@@ -690,6 +579,7 @@ export class StreamingMojoParser {
                 this.currentMemoryMetric = null;
                 this.invalidFrame = false;
                 this.currentGC = false;
+                this.currentRunningTask = null;
                 break;
             }
             case MOJO_EVENT.frame: {
@@ -699,13 +589,11 @@ export class StreamingMojoParser {
                 break;
             }
             case MOJO_EVENT.invalidFrame: {
-                if (!this.taskTracker.pushFrame(specialFrame("INVALID"))) {
-                    if (this.previousStacks.has(this.currentStackKey!)) {
-                        this.currentStack = this.previousStacks.get(this.currentStackKey!)!;
-                        this.invalidFrame = true;
-                    } else {
-                        this.currentStack.push(specialFrame("INVALID"));
-                    }
+                if (this.previousStacks.has(this.currentStackKey!)) {
+                    this.currentStack = this.previousStacks.get(this.currentStackKey!)!;
+                    this.invalidFrame = true;
+                } else {
+                    this.currentStack.push(specialFrame("INVALID"));
                 }
                 break;
             }
@@ -716,14 +604,17 @@ export class StreamingMojoParser {
                 if (frame === undefined) {
                     throw new Error("Invalid frame reference");
                 }
-                if (!this.taskTracker.pushFrame(frame) && !this.invalidFrame) {
+                if (
+                    !this.taskReports.pushFrame(frame, this.currentPid, this.currentIid, this.currentTid, this.stats)
+                    && !this.invalidFrame
+                ) {
                     this.currentStack.push(frame);
                 }
                 break;
             }
             case MOJO_EVENT.kernelFrame: {
                 const kf = { module: "kernel", scope: demangle(this.consumeString()), line: 0 };
-                if (!this.taskTracker.pushFrame(kf) && !this.invalidFrame) {
+                if (!this.invalidFrame) {
                     this.currentStack.push(kf);
                 }
                 break;
@@ -733,15 +624,9 @@ export class StreamingMojoParser {
                 break;
             case MOJO_EVENT.idle:
                 break;
-            case MOJO_EVENT.time: {
-                const value = this.consumeVarInt();
-                if (this.taskTracker.isPending) {
-                    this.taskTracker.setMetricAndFlush(value, this.currentPid, this.currentIid, this.currentTid, this.stats);
-                } else {
-                    this.currentTimeMetric = value;
-                }
+            case MOJO_EVENT.time:
+                this.currentTimeMetric = this.consumeVarInt();
                 break;
-            }
             case MOJO_EVENT.memory:
                 this.currentMemoryMetric = this.consumeVarInt();
                 break;
@@ -757,17 +642,22 @@ export class StreamingMojoParser {
             case MOJO_EVENT.taskStack: {
                 const taskId = this.consumeVarInt();
                 const nameKey = this.consumeVarInt();
-                this.taskTracker.flush(this.currentPid, this.currentIid, this.currentTid, this.stats);
-                this.taskTracker.begin(taskId, nameKey, this.stringRefs, this.currentPid, this.stats);
+                const frameCount = this.consumeVarInt();
+                this.taskReports.begin(taskId, nameKey, frameCount, this.stringRefs, this.currentPid, this.stats);
                 break;
             }
             case MOJO_EVENT.taskWaiter: {
                 const taskId = this.consumeVarInt();
                 const waiterId = this.consumeVarInt();
-                this.taskTracker.flush(this.currentPid, this.currentIid, this.currentTid, this.stats);
-                this.stats.updateTaskWaiter(this.taskTracker.resolve(taskId.toString()), this.taskTracker.resolve(waiterId.toString()));
+                // See the matching comment in MojoParser.
+                if (waiterId !== 0n) {
+                    this.stats.updateTaskWaiter(taskId.toString(), waiterId.toString());
+                }
                 break;
             }
+            case MOJO_EVENT.taskRunning:
+                this.currentRunningTask = this.consumeVarInt().toString();
+                break;
             default:
                 throw new Error("Unknown MOJO event");
         }
@@ -805,8 +695,6 @@ export class StreamingMojoParser {
     }
 
     finalize(): void {
-        this.taskTracker.flush(this.currentPid, this.currentIid, this.currentTid, this.stats);
-        this.taskTracker.flushCarry(this.stats);
         if (this.currentPid !== null) {
             const metric = Number(this.mode === "memory" ? this.currentMemoryMetric! : this.currentTimeMetric!);
             this.stats.update(
@@ -815,6 +703,7 @@ export class StreamingMojoParser {
                 this.currentStack,
                 metric,
                 this.currentGC,
+                this.currentRunningTask,
             );
         }
     }
