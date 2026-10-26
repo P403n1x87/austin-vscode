@@ -194,25 +194,27 @@ These tools require a loaded profiling session.
 | `get_call_stacks` | `depth` (optional, default 15), `threshold` (optional, default 0) | Process→thread→function call-stack tree. Each node carries a unique `nodeId`. Set `threshold` to a minimum total-% to prune low-contribution branches. |
 | `get_metadata` | — | Source file, sampling mode, interval, and total sample count. |
 | `get_gc_data` | `limit` (optional) | Per-thread GC time fractions and top functions on the stack during GC, ranked by own GC time. Returns `available: false` if GC collection was not enabled for the session. |
+| `get_task_traces` | `depth` (optional, default 10), `threshold` (optional, default 0) | asyncio task traces: per event-loop thread, the tree of tasks nested by who awaits whom, with each task's coroutine, last location, lifetime span, running and total time, and whether it was still alive. Percentages are relative to the owning thread's time. Tasks carry a `nodeId` when they appear in the flame graph. |
 
 ### Action tools
 
 | Tool | Parameters | Description |
 |---|---|---|
 | `load_profile` | `path` (required) | Load an Austin profile file (`.austin`, `.aprof`, or `.mojo`) and open it in the flame graph view. |
-| `focus_flamegraph` | `nodeId` (required) | Zoom the flame graph to a node by its `nodeId` (returned by `get_call_stacks`). |
+| `focus_flamegraph` | `nodeId` (required) | Zoom the flame graph to a node by its `nodeId` (returned by `get_call_stacks` or `get_task_traces`). |
 | `search_flamegraph` | `term` (required) | Highlight all flame graph frames matching a substring. |
 
 All time and memory values are expressed as a percentage of the total observed
-metric for the session.
+metric for the session, except for `get_task_traces`, whose values are relative
+to the time of the thread that owns each task.
 
 ### GitHub Copilot
 
 The MCP server is registered automatically with VS Code's built-in MCP client.
 No configuration is required — the tools appear in Copilot agent mode as soon
 as the extension activates, under the names `mcp_austin_get_top`,
-`mcp_austin_get_call_stacks`, `mcp_austin_get_metadata`, and
-`mcp_austin_get_gc_data`.
+`mcp_austin_get_call_stacks`, `mcp_austin_get_metadata`,
+`mcp_austin_get_gc_data`, and `mcp_austin_get_task_traces`.
 
 ### Other agents (Claude Code, Cursor, etc.)
 

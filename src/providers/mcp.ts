@@ -1,6 +1,6 @@
 import * as http from 'http';
 import { existsSync } from 'fs';
-import { AustinStats, TopStats } from '../model';
+import { AustinStats, TaskFrame, TaskTraceNode, TopStats } from '../model';
 import { hashPath } from '../utils/pathKey';
 
 export interface McpActions {
@@ -126,14 +126,58 @@ const TOOLS = [
         },
     },
     {
+        name: 'get_task_traces',
+        description: [
+            'Returns the asyncio task traces: for each thread running an event loop, the tree of tasks it',
+            'drove, nested by who awaits whom (a child is a task its parent awaits), with when each task',
+            'was alive and how much time it took. Returns an empty result if the profile has no task data.',
+            'Each task has: taskId, name (often auto-generated, e.g. "Task-12" -- use coroutine to tell',
+            'tasks apart), coroutine (outermost frame of the task\'s stack), location (innermost frame it',
+            'was last seen at, e.g. the await it was suspended on), startPct/endPct (when it was first and',
+            'last seen), runningPct (time it was the running task -- time it held the event loop),',
+            'totalPct (time it was held at all: in wall mode, running plus awaiting; in CPU mode, running',
+            'only), alive (still not finished when sampling stopped), children, hiddenChildren (children',
+            'dropped by depth/threshold) and nodeId (pass to focus_flamegraph; absent if the task has no',
+            'frames in the flame graph).',
+            '',
+            'All percentages are relative to the total time of the thread that owns the root task, so',
+            'they are comparable within a thread but not across threads. A child\'s span is clipped into',
+            'its parent\'s.',
+            '',
+            'Things to look for:',
+            '- Tasks with high runningPct block the event loop: every other task on that thread is',
+            '  stalled while they run (e.g. CPU-bound or synchronous I/O code in a coroutine).',
+            '- Tasks with high totalPct but low runningPct spend most of their time awaiting; their',
+            '  location shows what they wait on.',
+            '- Sibling tasks whose spans do not overlap were awaited one after another; if they are',
+            '  independent, running them concurrently (e.g. asyncio.gather) may cut latency.',
+            '- Many short-lived siblings with the same coroutine suggest task-creation churn.',
+            '- Tasks still alive at the end of a finished program may have leaked.',
+        ].join(' '),
+        inputSchema: {
+            type: 'object',
+            properties: {
+                depth: {
+                    type: 'number',
+                    description: 'Maximum await-tree depth to expand (default: 10).',
+                },
+                threshold: {
+                    type: 'number',
+                    description: 'Minimum span (endPct - startPct) or totalPct a task must account for to be included (default: 0 -- no filtering). Children of a dropped task are dropped too.',
+                },
+            },
+            additionalProperties: false,
+        },
+    },
+    {
         name: 'focus_flamegraph',
-        description: 'Zooms the flame graph to a specific node, identified by the nodeId returned in the get_call_stacks response. Call get_call_stacks first to obtain valid node IDs.',
+        description: 'Zooms the flame graph to a specific node, identified by the nodeId returned in the get_call_stacks or get_task_traces response. Call one of them first to obtain valid node IDs.',
         inputSchema: {
             type: 'object',
             properties: {
                 nodeId: {
                     type: 'number',
-                    description: 'The nodeId of the flame graph node to focus, as returned by get_call_stacks.',
+                    description: 'The nodeId of the flame graph node to focus, as returned by get_call_stacks or get_task_traces.',
                 },
             },
             required: ['nodeId'],
@@ -179,6 +223,51 @@ function serializeCallStackNode(
     };
 }
 
+interface TaskTraceEntry {
+    taskId: string;
+    name: string;
+    nodeId?: number;
+    coroutine?: TaskFrame;
+    location?: TaskFrame;
+    startPct: number;
+    endPct: number;
+    runningPct: number;
+    totalPct: number;
+    alive: boolean;
+    children: TaskTraceEntry[];
+    hiddenChildren?: number;
+}
+
+const pct = (fraction: number) => parseFloat((fraction * 100).toFixed(2));
+
+function isTaskVisible(node: TaskTraceNode, threshold: number): boolean {
+    return Math.max(node.endFraction - node.startFraction, node.totalFraction) * 100 >= threshold;
+}
+
+function serializeTaskTraceNode(
+    node: TaskTraceNode,
+    depth: number,
+    threshold: number,
+    assignId: (frameKey: number) => number,
+): TaskTraceEntry {
+    const children = depth > 0 ? node.children.filter(child => isTaskVisible(child, threshold)) : [];
+    const hiddenChildren = node.children.length - children.length;
+    return {
+        taskId: node.taskId,
+        name: node.name,
+        nodeId: node.frameKey !== undefined ? assignId(node.frameKey) : undefined,
+        coroutine: node.coroutine,
+        location: node.location,
+        startPct: pct(node.startFraction),
+        endPct: pct(node.endFraction),
+        runningPct: pct(node.runningFraction),
+        totalPct: pct(node.totalFraction),
+        alive: node.alive,
+        children: children.map(child => serializeTaskTraceNode(child, depth - 1, threshold, assignId)),
+        hiddenChildren: hiddenChildren > 0 ? hiddenChildren : undefined,
+    };
+}
+
 // ---------------------------------------------------------------------------
 // AustinMcpServer
 // ---------------------------------------------------------------------------
@@ -186,8 +275,23 @@ export class AustinMcpServer {
     private _httpServer: http.Server | null = null;
     private _stats: AustinStats | null = null;
     private _actions: McpActions | null = null;
-    /** Maps nodeId → flamegraph frameKey (hash). Rebuilt on each get_call_stacks call. */
+    /**
+     * Maps nodeId → flamegraph frameKey (hash), and back. A frameKey keeps
+     * its nodeId across calls, so ids handed out by get_call_stacks and
+     * get_task_traces stay valid together.
+     */
     private _nodeIdMap: Map<number, number> = new Map();
+    private _frameKeyToNodeId: Map<number, number> = new Map();
+
+    private _assignNodeId = (frameKey: number): number => {
+        let id = this._frameKeyToNodeId.get(frameKey);
+        if (id === undefined) {
+            id = this._nodeIdMap.size;
+            this._nodeIdMap.set(id, frameKey);
+            this._frameKeyToNodeId.set(frameKey, id);
+        }
+        return id;
+    };
 
     /** Registers callbacks for UI actions the MCP tools can trigger. */
     setActions(actions: McpActions): void {
@@ -362,6 +466,8 @@ export class AustinMcpServer {
                 return this._focusFlamegraph(args.nodeId as number | undefined);
             case 'search_flamegraph':
                 return this._searchFlamegraph(args.term as string | undefined);
+            case 'get_task_traces':
+                return this._getTaskTraces(args.depth as number | undefined, args.threshold as number | undefined);
             default:
                 return [{ type: 'text', text: `Unknown tool: ${name}` }];
         }
@@ -387,7 +493,7 @@ export class AustinMcpServer {
         }
         const frameKey = this._nodeIdMap.get(nodeId);
         if (frameKey === undefined) {
-            return [{ type: 'text', text: 'Unknown nodeId. Call get_call_stacks first to obtain valid node IDs.' }];
+            return [{ type: 'text', text: 'Unknown nodeId. Call get_call_stacks or get_task_traces first to obtain valid node IDs.' }];
         }
         if (!this._actions) {
             return [{ type: 'text', text: 'Flamegraph focus is not available.' }];
@@ -427,17 +533,25 @@ export class AustinMcpServer {
 
     private _getCallStacks(depth: number = 15, threshold: number = 0): Array<{ type: string; text: string }> {
         const stats = this._stats!;
-        this._nodeIdMap.clear();
-        let nextId = 0;
-        const assignId = (frameKey: number) => {
-            const id = nextId++;
-            this._nodeIdMap.set(id, frameKey);
-            return id;
-        };
         const tree = [...stats.callStack.callees.values()]
             .filter(n => n.total * 100 >= threshold)
-            .map(n => serializeCallStackNode(n, depth - 1, 0, threshold, assignId));
+            .map(n => serializeCallStackNode(n, depth - 1, 0, threshold, this._assignNodeId));
         return [{ type: 'text', text: JSON.stringify(tree, null, 2) }];
+    }
+
+    private _getTaskTraces(depth: number = 10, threshold: number = 0): Array<{ type: string; text: string }> {
+        const stats = this._stats!;
+        const threads = stats.getTaskTraces().map(group => {
+            const roots = group.roots.filter(root => isTaskVisible(root, threshold));
+            const hiddenTasks = group.roots.length - roots.length;
+            return {
+                pid: group.pid,
+                tid: group.tid,
+                tasks: roots.map(root => serializeTaskTraceNode(root, depth - 1, threshold, this._assignNodeId)),
+                hiddenTasks: hiddenTasks > 0 ? hiddenTasks : undefined,
+            };
+        });
+        return [{ type: 'text', text: JSON.stringify({ mode: stats.metadata.get('mode') ?? null, threads }, null, 2) }];
     }
 
     private _getMetadata(): Array<{ type: string; text: string }> {

@@ -946,6 +946,35 @@ suite('AustinStats.getTaskTraces()', () => {
         assert.strictEqual(root.endFraction, 1);
     });
 
+    test('a task carries its running and total time, liveness, coroutine and last location', () => {
+        const stats = new AustinStats();
+        stats.begin('test.austin');
+        stats.setMetadata('mode', 'wall');
+        stats.setTaskName('t1', 'worker-0');
+        stats.setTaskName('t2', 'driver');
+        at(stats, 't1', [frame('work', 10), frame('fetch', 20)]);
+        at(stats, 't2', [frame('main', 5)]);
+        sample(stats, 30, 1, 'A', 't1');      // t1 running, t2 awaiting
+        sample(stats, 20);                     // both awaiting
+        stats.closeTask('t1');
+        sample(stats, 50);                     // only t2 left
+        stats.refresh();
+
+        const roots = stats.getTaskTraces()[0].roots;
+        const t1 = roots.find(r => r.taskId === 't1')!;
+        assert.strictEqual(t1.runningFraction, 0.3);
+        assert.strictEqual(t1.totalFraction, 0.5, 'wall mode: running plus awaiting');
+        assert.strictEqual(t1.alive, false);
+        assert.deepStrictEqual(t1.coroutine, { scope: 'work', module: '/mod.py', line: 10 });
+        assert.deepStrictEqual(t1.location, { scope: 'fetch', module: '/mod.py', line: 20 });
+
+        const t2 = roots.find(r => r.taskId === 't2')!;
+        assert.strictEqual(t2.runningFraction, 0);
+        assert.strictEqual(t2.totalFraction, 1);
+        assert.strictEqual(t2.alive, true);
+        assert.deepStrictEqual(t2.coroutine, t2.location, 'a single-frame task is at its own coroutine');
+    });
+
     test('with no tasks recorded, returns an empty list', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
@@ -953,13 +982,33 @@ suite('AustinStats.getTaskTraces()', () => {
         assert.deepStrictEqual(stats.getTaskTraces(), []);
     });
 
-    test('a task on a thread with no samples (its clock stays 0) does not divide by zero', () => {
+    test('a task on a thread with no samples (its clock stays 0) is kept, with zero fractions', () => {
         const stats = new AustinStats();
         stats.begin('test.austin');
         stats.setTaskName('t1', 'worker-0');
         at(stats, 't1', [frame('a')]);
         stats.refresh();
-        assert.deepStrictEqual(stats.getTaskTraces(), []);
+        const [root] = stats.getTaskTraces()[0].roots;
+        assert.strictEqual(root.taskId, 't1');
+        assert.strictEqual(root.startFraction, 0);
+        assert.strictEqual(root.endFraction, 0);
+        assert.strictEqual(root.runningFraction, 0);
+        assert.strictEqual(root.totalFraction, 0);
+        // The Tasks view lists the same task: both views agree on which
+        // tasks exist.
+        assert.strictEqual(stats.getTaskForest()[0].tasks[0].id, 't1');
+    });
+
+    test('a task\'s location has the line of its last report, not of the frame\'s first one', () => {
+        const stats = new AustinStats();
+        stats.begin('test.austin');
+        at(stats, 't1', [frame('main', 5), frame('fetch', 20)]);
+        sample(stats, 10);
+        at(stats, 't1', [frame('main', 5), frame('fetch', 25)]); // same function, another await
+        sample(stats, 10);
+        stats.refresh();
+        const [root] = stats.getTaskTraces()[0].roots;
+        assert.deepStrictEqual(root.location, { scope: 'fetch', module: '/mod.py', line: 25 });
     });
 });
 

@@ -83,11 +83,29 @@ export interface TaskThreadGroup {
     frameKey?: number;
 }
 
+export interface TaskFrame {
+    scope: string;
+    module: string;
+    line?: number;
+}
+
 export interface TaskTraceNode {
     taskId: string;
     name: string;
     startFraction: number;
     endFraction: number;
+    // The task's own time (see TaskSummary's own/total), over the same
+    // per-thread clock as startFraction/endFraction: the time it was the
+    // running task, and the time it was held at all (in wall mode, running
+    // plus awaiting; in CPU mode, running only).
+    runningFraction: number;
+    totalFraction: number;
+    // Whether the task was still alive (not closed) when sampling stopped.
+    alive: boolean;
+    // The outermost frame of the task's stack (its coroutine), and the
+    // innermost one it was last seen at.
+    coroutine?: TaskFrame;
+    location?: TaskFrame;
     frameKey?: number;
     // The tasks this one awaits (see AustinTask.awaiting server-side),
     // nested here the same way getTaskForest's await tree nests them --
@@ -243,6 +261,11 @@ export class AustinStats implements AustinStats {
     // The current position (frames) of every task still alive, i.e. reported
     // and not closed yet. See updateTaskPosition and accrueTaskTime.
     private taskPosition: Map<string, FrameObject[]> = new Map();
+    // The innermost frame of each task's last reported position, kept after
+    // the task closes. Unlike taskLeaves' node, whose line is the one the
+    // frame was first seen at, this has the line of the last report. See
+    // buildTaskTraceNode.
+    private taskLastFrame: Map<string, FrameObject> = new Map();
     // Time of the samples in which a task was the running one. See
     // accrueTaskTime and buildTaskSummary.
     private taskRunningTime: Map<string, number> = new Map();
@@ -307,6 +330,7 @@ export class AustinStats implements AustinStats {
         this.taskLastSeen.clear();
         this.threadTotal.clear();
         this.taskPosition.clear();
+        this.taskLastFrame.clear();
         this.taskRunningTime.clear();
     }
 
@@ -367,6 +391,9 @@ export class AustinStats implements AustinStats {
         const key = `${pid}:${tid}`;
         this.taskOwner.set(taskId, key);
         this.taskPosition.set(taskId, frames);
+        if (frames.length > 0) {
+            this.taskLastFrame.set(taskId, frames[frames.length - 1]);
+        }
         this.getOrCreateTaskNode(taskId);
         if (!this.taskFirstSeen.has(taskId)) {
             const clock = this.threadTotal.get(key) ?? 0;
@@ -1051,11 +1078,19 @@ export class AustinStats implements AustinStats {
             end = Math.min(Math.max(end, bounds.start), bounds.end);
         }
 
+        const taskNode = this.taskNodesById.get(taskId);
+        const outermost = taskNode?.children[0];
+        const lastFrame = this.taskLastFrame.get(taskId);
         const node: TaskTraceNode = {
             taskId,
             name: this.taskNames.get(taskId) ?? `Task ${taskId}`,
             startFraction: start / denom,
             endFraction: end / denom,
+            runningFraction: (this.taskRunningTime.get(taskId) ?? 0) / denom,
+            totalFraction: (taskNode?.value ?? 0) / denom,
+            alive: this.taskPosition.has(taskId),
+            coroutine: outermost && { scope: outermost.name, module: outermost.file ?? '', line: outermost.line },
+            location: lastFrame && { scope: lastFrame.scope, module: lastFrame.module, line: lastFrame.line },
             frameKey: entryNode ? frameKeys.get(entryNode) : undefined,
             children: [],
         };
@@ -1095,10 +1130,11 @@ export class AustinStats implements AustinStats {
                 continue;
             }
             const ownerKey = this.taskOwner.get(taskId);
-            const denom = ownerKey !== undefined ? (this.threadTotal.get(ownerKey) ?? 0) : this.overallTotal;
-            if (denom === 0) {
-                continue;
-            }
+            // A thread with no time yet (clock still 0) has every task on it
+            // at 0 with no time either: any non-zero denominator gives the
+            // same all-zero fractions, and keeps the task listed, as
+            // getTaskForest does.
+            const denom = (ownerKey !== undefined ? (this.threadTotal.get(ownerKey) ?? 0) : this.overallTotal) || 1;
             const group = groups.getDefault(ownerKey ?? "orphaned", () => {
                 if (ownerKey === undefined) {
                     return { pid: -1, tid: "orphaned", roots: [] };
