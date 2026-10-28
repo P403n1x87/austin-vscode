@@ -214,6 +214,7 @@ suite('AustinMcpServer', () => {
         assert.ok(names.includes('load_profile'));
         assert.ok(names.includes('focus_flamegraph'));
         assert.ok(names.includes('search_flamegraph'));
+        assert.ok(names.includes('get_task_traces'));
     });
 
     test('unknown method returns error -32601', async () => {
@@ -767,5 +768,146 @@ suite('AustinMcpServer', () => {
         }) as Record<string, unknown>;
         const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
         assert.ok(content[0].text.toLowerCase().includes('not available'));
+    });
+    // --- get_task_traces ----------------------------------------------------
+
+    /**
+     * A root task `main` awaiting a child task `worker` on thread 1:0x1, in
+     * wall mode: main is alive throughout (100 units), worker from 25 to 75,
+     * running for 25 of them.
+     */
+    function makeTaskStats(): AustinStats {
+        const stats = new AustinStats();
+        stats.begin('test.mojo');
+        stats.setMetadata('mode', 'wall');
+        const loop = [{ module: '/asyncio/base_events.py', scope: 'run_forever', line: 1 }];
+        stats.setTaskName('main', 'Task-1');
+        stats.setTaskName('worker', 'Task-2');
+        stats.updateTaskWaiter('worker', 'main');
+        stats.updateTaskPosition('main', [{ module: '/app.py', scope: 'main', line: 10 }], 1, '0x1');
+        stats.update(1, '0x1', loop, 25);
+        stats.updateTaskPosition('worker', [
+            { module: '/app.py', scope: 'work', line: 20 },
+            { module: '/app.py', scope: 'fetch', line: 30 },
+        ], 1, '0x1');
+        stats.update(1, '0x1', loop, 25, false, 'worker');
+        stats.update(1, '0x1', loop, 25);
+        stats.closeTask('worker');
+        stats.update(1, '0x1', loop, 25);
+        stats.refresh();
+        return stats;
+    }
+
+    type TaskEntry = {
+        taskId: string; name: string; nodeId?: number;
+        coroutine?: { scope: string; module: string; line?: number };
+        location?: { scope: string; module: string; line?: number };
+        startPct: number; endPct: number; runningPct: number; totalPct: number;
+        alive: boolean; children: TaskEntry[]; hiddenChildren?: number;
+    };
+    type TaskTraces = { mode: string | null; threads: { pid: number; tid: string; tasks: TaskEntry[]; hiddenTasks?: number }[] };
+
+    async function getTaskTraces(port: number, args: Record<string, unknown> = {}): Promise<TaskTraces> {
+        const res = await post(port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 40,
+            params: { name: 'get_task_traces', arguments: args },
+        }) as Record<string, unknown>;
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        return JSON.parse(content[0].text) as TaskTraces;
+    }
+
+    test('get_task_traces returns the await tree per thread, with timing and state', async () => {
+        server = await startedServer(makeTaskStats());
+        const traces = await getTaskTraces(server.port);
+
+        assert.strictEqual(traces.mode, 'wall');
+        assert.strictEqual(traces.threads.length, 1);
+        const [thread] = traces.threads;
+        assert.strictEqual(thread.pid, 1);
+        assert.strictEqual(thread.tid, '0x1');
+        assert.strictEqual(thread.tasks.length, 1, 'the awaited worker nests under main');
+
+        const [main] = thread.tasks;
+        assert.strictEqual(main.taskId, 'main');
+        assert.strictEqual(main.name, 'Task-1');
+        assert.deepStrictEqual(main.coroutine, { scope: 'main', module: '/app.py', line: 10 });
+        assert.strictEqual(main.startPct, 0);
+        assert.strictEqual(main.endPct, 100);
+        assert.strictEqual(main.runningPct, 0);
+        assert.strictEqual(main.totalPct, 100);
+        assert.strictEqual(main.alive, true);
+
+        const [worker] = main.children;
+        assert.strictEqual(worker.taskId, 'worker');
+        assert.deepStrictEqual(worker.coroutine, { scope: 'work', module: '/app.py', line: 20 });
+        assert.deepStrictEqual(worker.location, { scope: 'fetch', module: '/app.py', line: 30 });
+        assert.strictEqual(worker.startPct, 25);
+        assert.strictEqual(worker.endPct, 75);
+        assert.strictEqual(worker.runningPct, 25);
+        assert.strictEqual(worker.totalPct, 50);
+        assert.strictEqual(worker.alive, false);
+        assert.strictEqual(worker.hiddenChildren, undefined);
+    });
+
+    test('get_task_traces returns no threads when the profile has no tasks', async () => {
+        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
+        server = await startedServer(stats);
+        const traces = await getTaskTraces(server.port);
+        assert.deepStrictEqual(traces.threads, []);
+    });
+
+    test('get_task_traces depth cuts the tree and reports the hidden children', async () => {
+        server = await startedServer(makeTaskStats());
+        const [main] = (await getTaskTraces(server.port, { depth: 1 })).threads[0].tasks;
+        assert.deepStrictEqual(main.children, []);
+        assert.strictEqual(main.hiddenChildren, 1);
+    });
+
+    test('get_task_traces threshold drops small tasks and reports them', async () => {
+        server = await startedServer(makeTaskStats());
+        const [main] = (await getTaskTraces(server.port, { threshold: 60 })).threads[0].tasks;
+        assert.deepStrictEqual(main.children, [], 'worker spans 50% < 60%');
+        assert.strictEqual(main.hiddenChildren, 1);
+
+        const thread = (await getTaskTraces(server.port, { threshold: 101 })).threads[0];
+        assert.deepStrictEqual(thread.tasks, []);
+        assert.strictEqual(thread.hiddenTasks, 1);
+    });
+
+    test('get_task_traces nodeId focuses the task in the flame graph, alongside get_call_stacks ids', async () => {
+        const stats = makeTaskStats();
+        server = await startedServer(stats);
+        const [main] = (await getTaskTraces(server.port)).threads[0].tasks;
+        assert.strictEqual(typeof main.nodeId, 'number');
+
+        // Handing out call-stack ids must not invalidate task ids.
+        await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 41,
+            params: { name: 'get_call_stacks', arguments: {} },
+        });
+
+        let calledWith: number | null = null;
+        server.setActions({ loadFile: () => {}, focusFrame: (k) => { calledWith = k; }, searchFrames: () => {} });
+        const res = await post(server.port, {
+            jsonrpc: '2.0', method: 'tools/call', id: 42,
+            params: { name: 'focus_flamegraph', arguments: { nodeId: main.nodeId } },
+        }) as Record<string, unknown>;
+        const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+        assert.ok(content[0].text.startsWith('Focused'), content[0].text);
+        assert.strictEqual(calledWith, stats.getTaskTraces()[0].roots[0].frameKey);
+    });
+
+    test('nodeIds are stable across repeated get_call_stacks calls', async () => {
+        const stats = await makeStats('P1;T1;/a.py:fn:1 100\n');
+        server = await startedServer(stats);
+        const ids = async () => {
+            const res = await post(server!.port, {
+                jsonrpc: '2.0', method: 'tools/call', id: 43,
+                params: { name: 'get_call_stacks', arguments: {} },
+            }) as Record<string, unknown>;
+            const content = (res.result as Record<string, unknown>).content as Array<{ type: string; text: string }>;
+            return JSON.stringify(JSON.parse(content[0].text));
+        };
+        assert.strictEqual(await ids(), await ids());
     });
 });

@@ -98,15 +98,41 @@ suite('MojoParser — error cases', () => {
         );
     });
 
-    test('throws when frame event arrives before any stack event', () => {
+    test('accepts a frame event before any stack event', () => {
+        // Frame definitions are keyed by their own ids, not by the sample
+        // they come with, so one with no prior stack is valid, not an error.
         const bytes = [
-            0x4D, 0x4F, 0x4A, vi(1),  // MOJ v1
-            vi(3),                      // MOJO_EVENT.frame — no stack first
+            0x4D, 0x4F, 0x4A, vi(4),   // MOJ v4
+
+            vi(11), vi(2), ...str('/test.py'), // string key=2 -> filename
+            vi(11), vi(3), ...str('foo'),      // string key=3 -> scope
+            vi(3), vi(1), vi(2), vi(3), vi(10), vi(0), vi(0), vi(0), // MOJO_FRAME key=1
+
+            vi(2), vi(1), ...str('T1'), // MOJO_STACK pid=1, tid="T1"
+            vi(5), vi(1),               // frameReference key=1
+            vi(9), vi(10),              // time=10
         ];
         const stats = new AustinStats();
+        assert.doesNotThrow(
+            () => new MojoParser(bytes.values() as IterableIterator<number>).parseInto(stats)
+        );
+        assert.ok(stats.top.get('/test.py:foo'), 'expected the frame to resolve');
+    });
+
+    test('throws on a frame reference that was never defined', () => {
+        // A *reference* to a key nothing ever defined is always a
+        // corrupt/desynced stream and must fail fast rather than push
+        // `undefined` into a stack silently -- task reports included.
+        const bytes = [
+            0x4D, 0x4F, 0x4A, vi(4),   // MOJ v4
+
+            vi(2), vi(1), ...str('T1'),         // MOJO_STACK pid=1, tid="T1"
+            vi(14), ...varIntBytes(999), vi(0), vi(1), // taskStack(999, name_key=0, frame_count=1)
+            vi(5), vi(1),                        // frameReference key=1, never defined
+        ];
         assert.throws(
-            () => new MojoParser(bytes.values() as IterableIterator<number>).parseInto(stats),
-            /Frame event before stack event/
+            () => new MojoParser(bytes.values() as IterableIterator<number>).parseInto(new AustinStats()),
+            /Invalid frame reference/
         );
     });
 
@@ -123,10 +149,10 @@ suite('MojoParser — error cases', () => {
     });
 
     test('throws on unsupported MOJO version', () => {
-        const bytes = [0x4D, 0x4F, 0x4A, vi(5)];  // MOJ v5
+        const bytes = [0x4D, 0x4F, 0x4A, vi(6)];  // MOJ v6
         assert.throws(
             () => new MojoParser(bytes.values() as IterableIterator<number>),
-            /Unsupported MOJO version: 5/
+            /Unsupported MOJO version: 6/
         );
     });
 
@@ -668,5 +694,166 @@ suite('MojoParser — real file regression', () => {
         const hotspot = stats.top.get('/home/gabriele/Projects/austin/test/targets/target34.py:keep_cpu_busy')!;
         assert.ok(hotspot, 'top hotspot entry should exist');
         assert.ok(Math.abs(hotspot.own - 0.917) < 0.001, `own should be ~0.917, got ${hotspot.own}`);
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// asyncio task events (MOJO_TASK_STACK / MOJO_TASK_WAITER / MOJO_TASK_RUNNING)
+//
+// A task report comes inside a thread sample's window, between its
+// MOJO_STACK and its thread frames: MOJO_TASK_STACK(task_id, name_key,
+// frame_count) followed by exactly frame_count frame references, which are
+// the task's, not the thread's. The task then gets the time of every sample
+// of that thread until its next report, or until its closing report
+// (frame_count 0) -- running time when it's the sample's MOJO_TASK_RUNNING,
+// await time otherwise (none in CPU mode).
+// ---------------------------------------------------------------------------
+
+const TASK_PRELUDE = [
+    0x4D, 0x4F, 0x4A, vi(4),            // MOJ v4
+    vi(11), vi(2), ...str('/test.py'),  // string key=2 -> filename
+    vi(11), vi(3), ...str('task'),      // string key=3 -> the task's frame
+    vi(11), vi(4), ...str('loop'),      // string key=4 -> the thread's frame
+    vi(11), vi(5), ...str('worker'),    // string key=5 -> a task name
+    vi(3), vi(1), vi(2), vi(3), vi(10), vi(0), vi(0), vi(0), // MOJO_FRAME key=1 (task)
+    vi(3), vi(2), vi(2), vi(4), vi(20), vi(0), vi(0), vi(0), // MOJO_FRAME key=2 (loop)
+];
+
+function taskForest(stats: AustinStats) {
+    return stats.getTaskForest().flatMap(g => g.tasks);
+}
+
+suite('MojoParser — asyncio tasks', () => {
+
+    test('task report frames go to the task, not to the thread stack', () => {
+        const bytes = [
+            ...TASK_PRELUDE,
+            vi(2), vi(1), ...str('T1'),               // MOJO_STACK pid=1, tid="T1"
+            vi(14), vi(7), vi(5), vi(1), vi(5), vi(1), // taskStack(7, name="worker", 1 frame) + its frame
+            vi(16), vi(7),                             // taskRunning(7)
+            vi(5), vi(2),                              // the thread's own frame
+            vi(9), vi(50),                             // time=50
+        ];
+        const stats = parseWith(bytes);
+        stats.refresh();
+
+        assert.strictEqual(stats.overallTotal, 50, 'task time is the thread\'s time, not extra time');
+        const thread = stats.hierarchy.children[0].children[0];
+        assert.deepStrictEqual(thread.children.map(c => c.key), ['/test.py:loop']);
+
+        const [task] = taskForest(stats);
+        assert.strictEqual(task.id, '7');
+        assert.strictEqual(task.name, 'worker');
+        assert.strictEqual(task.own, 50);
+    });
+
+    test('a task gets the time of its thread\'s later samples until its closing report', () => {
+        const bytes = [
+            ...TASK_PRELUDE,
+            vi(2), vi(1), ...str('T1'),
+            vi(14), vi(7), vi(0), vi(1), vi(5), vi(1), // taskStack(7, 1 frame) + its frame
+            vi(5), vi(2),
+            vi(9), vi(10),                             // time=10: awaiting
+
+            vi(2), vi(1), ...str('T1'),                // no report: same position
+            vi(5), vi(2),
+            vi(9), vi(20),                             // time=20: still awaiting
+
+            vi(2), vi(1), ...str('T1'),
+            vi(5), vi(2),
+            vi(9), vi(40),                             // time=40: the task is gone ...
+            vi(14), vi(7), vi(0), vi(0),               // ... so this sample closes it, after its last metric
+        ];
+        const stats = parseWith(bytes);
+        stats.refresh();
+
+        assert.strictEqual(stats.overallTotal, 70);
+        assert.strictEqual(taskForest(stats)[0].total, 30);
+    });
+
+    test('in CPU mode only the running task gets time', () => {
+        const bytes = [
+            ...TASK_PRELUDE,
+            vi(1), ...str('mode'), ...str('cpu'),
+            vi(2), vi(1), ...str('T1'),
+            vi(14), vi(7), vi(0), vi(1), vi(5), vi(1),
+            vi(14), vi(8), vi(0), vi(1), vi(5), vi(1),
+            vi(16), vi(8),                             // taskRunning(8)
+            vi(5), vi(2),
+            vi(9), vi(10),
+
+            vi(2), vi(1), ...str('T1'),                // nothing running
+            vi(5), vi(2),
+            vi(9), vi(20),
+        ];
+        const stats = parseWith(bytes);
+        stats.refresh();
+
+        const own = new Map(taskForest(stats).map(t => [t.id, t.total]));
+        assert.strictEqual(own.get('7'), 0);
+        assert.strictEqual(own.get('8'), 10);
+    });
+
+    test('waiter edges nest tasks; a zero waiter only says the waiter set is empty', () => {
+        const bytes = [
+            ...TASK_PRELUDE,
+            vi(2), vi(1), ...str('T1'),
+            vi(15), vi(7), vi(8),                      // taskWaiter(7, 8): 8 awaits 7
+            vi(15), vi(8), vi(0),                      // taskWaiter(8, 0): nothing awaits 8
+            vi(14), vi(8), vi(0), vi(1), vi(5), vi(2),
+            vi(14), vi(7), vi(0), vi(1), vi(5), vi(1),
+            vi(5), vi(2),
+            vi(9), vi(10),
+        ];
+        const stats = parseWith(bytes);
+        stats.refresh();
+
+        const roots = taskForest(stats);
+        assert.deepStrictEqual(roots.map(t => t.id), ['8']);
+        assert.deepStrictEqual(roots[0].children.map(t => t.id), ['7']);
+    });
+
+    test('resolves a task frame cached under a stale (different, non-null) pid', () => {
+        // Frame/string caches are keyed `${pid}:${key}` to keep different
+        // attached processes' colliding numeric keys apart. In a
+        // multi-process (--children) capture, a frame can be cached while
+        // `pid` is still left over from whichever OTHER process was sampled
+        // last, then referenced again after a MOJO_STACK has switched `pid`
+        // to the frame's real owner. Neither the real pid nor "null" has it
+        // in that case, so resolution must fall back further, across every
+        // cached pid, instead of throwing.
+        const bytes = [
+            0x4D, 0x4F, 0x4A, vi(4),   // MOJ v4
+
+            vi(2), vi(1), ...str('T1'),        // MOJO_STACK pid=1, tid="T1"
+            vi(11), vi(2), ...str('/test.py'), // string key=2 -> filename, cached under pid 1
+            vi(11), vi(3), ...str('foo'),      // string key=3 -> scope, cached under pid 1
+            vi(3), vi(1), vi(2), vi(3), vi(10), vi(0), vi(0), vi(0), // MOJO_FRAME key=1, cached under pid 1
+            vi(5), vi(1),                       // frameReference key=1 -- T1's own regular frame
+            vi(9), ...varIntBytes(50),          // time=50
+
+            vi(2), vi(2), ...str('T2'),        // MOJO_STACK pid=2, tid="T2" -- pid switches to 2
+            // A task reference to the SAME key=1, now cached only under
+            // pid 1 -- neither "2:1" nor "null:1" has it.
+            vi(14), ...varIntBytes(888), vi(0), vi(1), // taskStack(888, name_key=0, 1 frame)
+            vi(5), vi(1),                        // frameReference key=1
+            vi(9), vi(10),                       // time=10
+        ];
+        const stats = new AustinStats();
+        assert.doesNotThrow(
+            () => new MojoParser(bytes.values() as IterableIterator<number>).parseInto(stats)
+        );
+        stats.refresh();
+
+        // T2 has no frames of its own, so the task lands in the fallback
+        // Tasks root -- what matters here is only that the stale-pid frame
+        // resolved to the right content instead of throwing or losing it.
+        const tasksRoot = stats.hierarchy.children.find(c => c.key === '__tasks__')!;
+        assert.ok(tasksRoot, 'expected a Tasks root node');
+        const taskNode = tasksRoot.children.find(c => c.key === '/test.py:foo')!;
+        assert.ok(taskNode, 'expected task 888\'s resolved frame');
+        assert.strictEqual(taskNode.name, 'foo');
+        assert.strictEqual(taskNode.file, '/test.py');
     });
 });
